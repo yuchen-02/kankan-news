@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "news-digest",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+
+  // 靜態頁面放在 public/；只有 /api/* 會進到 Worker，其餘直接由靜態資源回應
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Workers AI（不需要 API key）
+  "ai": { "binding": "AI" },
+
+  // 這個檔案是範本。實際使用的 wrangler.jsonc 已加進 .gitignore（裡面有自己的 KV id），不會被推上去。
+  // KV id 的取得：npx wrangler kv namespace create NEWS
+  "kv_namespaces": [
+    { "binding": "NEWS", "id": "<你的 KV namespace id>" }
+  ],
+
+  // 排程使用 UTC。"0 4,10,23 * * *" = 每天 04:00、10:00、23:00 UTC
+  // = 台灣時間 12:00、18:00、隔天 07:00（一天三次：早、中、晚）
+  "triggers": { "crons": ["0 4,10,23 * * *"] },
+
+  "vars": {
+    // "workers-ai" 或 "claude"
+    "SUMMARIZER": "workers-ai",
+    "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "CLAUDE_MODEL": "claude-haiku-5-5",
+    "MAX_EVENTS_TW": "8",
+    "MAX_EVENTS_WORLD": "8"
+  },
+
+  "observability": { "enabled": true }
+}

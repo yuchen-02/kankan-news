@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars
+
+# 含有自己的 KV namespace id；範本請看 wrangler.example.jsonc
+wrangler.jsonc
+
+# 已改用 news_image.webp，舊的 2 MB 原圖不需要放進 repo
+public/news_image.png
+
+.DS_Store
+*.log

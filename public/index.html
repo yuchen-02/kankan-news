@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看看新聞</title>
+<meta name="description" content="台灣與世界的新聞，定時整理成中立的重點摘要。">
+<meta name="theme-color" content="#33495c">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="292x292" href="/icon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<!-- 在畫面繪製前決定亮／暗色：有儲存的選擇就用它，沒有就跟隨使用者本機的設定 -->
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem("jiegui:theme");
+    if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="banner">
+  <div class="banner-bg" aria-hidden="true"></div>
+  <h1 class="sr-only">看看新聞</h1>
+  <button type="button" class="theme-toggle" id="theme-toggle" aria-label="切換亮色或暗色背景">
+    <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>
+    <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+  </button>
+</header>
+
+<div class="wrap">
+  <section class="infobar" aria-label="現在時間與天氣">
+    <div class="clock">
+      <div class="clock-row">
+        <span class="clock-icon" id="clock-icon" role="img"></span>
+        <span class="clock-time" id="clock-time" role="img"></span>
+      </div>
+      <div class="clock-sub">
+        <span class="clock-date" id="clock-date"></span>
+        <span class="clock-note" id="clock-note" hidden>台北時間</span>
+      </div>
+    </div>
+    <div class="weather" id="weather">
+      <span class="muted">天氣載入中…</span>
+    </div>
+  </section>
+
+
+  <main>
+    <!-- 只在「還沒有摘要」「讀取失敗」「摘要已過期」時顯示一行說明，平常是空的 -->
+    <p class="notice" id="msg" aria-live="polite">載入中…</p>
+
+    <div class="tabs-row">
+      <div class="tabs" role="tablist" aria-label="新聞地區" id="tablist">
+        <button type="button" role="tab" class="tab" id="tab-tw" aria-controls="panel-tw" aria-selected="true">台灣<span class="tab-ic ic-taiwan" aria-hidden="true"></span></button>
+        <button type="button" role="tab" class="tab" id="tab-world" aria-controls="panel-world" aria-selected="false" tabindex="-1">世界<span class="tab-ic ic-globe" aria-hidden="true"></span></button>
+      </div>
+      <div class="time-pick" id="time-pick">
+        <span class="time-cur" id="time-cur" hidden></span>
+        <button type="button" class="time-btn" id="time-btn" aria-haspopup="true" aria-expanded="false" aria-controls="time-menu" aria-label="選擇時間" title="選擇時間">
+          <span class="ic-cal" aria-hidden="true"></span><span class="dot" id="time-dot" hidden></span>
+        </button>
+        <div class="time-menu" id="time-menu" hidden></div>
+      </div>
+    </div>
+    <section role="tabpanel" id="panel-tw" aria-labelledby="tab-tw"></section>
+    <section role="tabpanel" id="panel-world" aria-labelledby="tab-world" hidden></section>
+  </main>
+
+  <footer>
+    <p>內容由 AI 根據各媒體公開的標題與摘要整理，可能有誤；每則都附原文連結，請以原文為準。每則新聞右上角的類型標籤由 AI 判斷，可能不準。</p>
+    <details id="status"><summary>這份摘要的來源狀態</summary><ul id="status-list"></ul></details>
+    <p>天氣資料來自 Open-Meteo，降雨機率為模型預報值。使用「我的位置」時，約略座標（小數兩位）會送到 Open-Meteo 查天氣，並送到 BigDataCloud 查地區名稱；座標不會存在這個網站。</p>
+  </footer>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
