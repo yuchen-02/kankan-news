@@ -73,6 +73,8 @@ export interface DigestEvent {
   categories?: string[];
   /** 縮圖網址（直接引用媒體的圖）；找不到就沒有這個欄位 */
   imageUrl?: string;
+  /** 該事件引用的不同文章各自的圖（最多 2 張、不重複）；頭條卡片有兩張時並排顯示。只有一張時沒有這個欄位 */
+  imageUrls?: string[];
 }
 
 export interface SourceStatus {

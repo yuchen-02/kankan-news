@@ -9,6 +9,7 @@ import {
   groupByDay,
   timeOfDay,
   slotLabelOf,
+  editionName,
   DIGEST_RETENTION_DAYS,
   weatherUrl,
   parseWeather,
@@ -188,7 +189,7 @@ const PIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 
 const WI = (inner) => `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
 const THERMO = 'M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z';
 const DROP = 'M12 3.5s6 6.3 6 10.5a6 6 0 0 1-12 0c0-4.2 6-10.5 6-10.5z';
-const CLOUD = 'M7.5 19h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 7.5 19z';
+const RAIN_CLOUD = 'M7.5 14h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 7.5 14z';
 const WEATHER_ICONS = {
   // 溫度：溫度計，水銀柱高度代表冷熱
   temp: {
@@ -206,18 +207,18 @@ const WEATHER_ICONS = {
     humid: WI(`<path d="${DROP}"/><path d="M8.6 14.6c1.1-.9 2.2-.9 3.4 0s2.3.9 3.4 0"/>`),
     veryhumid: WI(`<path d="${DROP}"/><path d="M8.6 12.8c1.1-.9 2.2-.9 3.4 0s2.3.9 3.4 0M8.6 16.2c1.1-.9 2.2-.9 3.4 0s2.3.9 3.4 0"/>`),
   },
-  // 降雨：由太陽到烏雲加雨滴
+  // 降雨：烏雲底下的雨滴，雨滴越多代表下雨機率越高
   rain: {
-    low: WI(`<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>`),
-    mid: WI(`<circle cx="8.5" cy="8.5" r="3"/><path d="M8.5 2.5v1.2M2.5 8.5h1.2M4.3 4.3l.9.9M12.7 4.3l-.9.9"/><path d="${CLOUD}"/>`),
-    high: WI(`<path d="M7.5 15h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 7.5 15z"/><path d="M9 18l-.8 2M13 18l-.8 2M17 18l-.8 2"/>`),
-    veryhigh: WI(`<path d="M7.5 14h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 7.5 14z"/><path d="M8.5 16.5l-1 3M12 16.5l-1 3M15.5 16.5l-1 3M19 16.5l-1 3"/>`),
+    low: WI(`<path d="${RAIN_CLOUD}"/><path d="M12 17.2l-.8 2.2"/>`),
+    mid: WI(`<path d="${RAIN_CLOUD}"/><path d="M9.6 17.2l-.8 2.2M14.6 17.2l-.8 2.2"/>`),
+    high: WI(`<path d="${RAIN_CLOUD}"/><path d="M8.2 17.2l-.8 2.2M12.2 17.2l-.8 2.2M16.2 17.2l-.8 2.2"/>`),
+    veryhigh: WI(`<path d="${RAIN_CLOUD}"/><path d="M7.6 16.8l-1 3M11.2 16.8l-1 3M14.8 16.8l-1 3M18.4 16.8l-1 3"/>`),
   },
 };
 
 function weatherRow(kind, name, valueText, level) {
   const row = el("div", { class: "w-row", title: level.label || "" });
-  const ic = el("span", { class: "w-ic" });
+  const ic = el("span", { class: "w-ic w-ic-" + kind });
   ic.innerHTML = WEATHER_ICONS[kind][level.key] || "";
   row.appendChild(ic);
   row.appendChild(el("span", { class: "w-k", text: name }));
@@ -250,7 +251,7 @@ function renderWeather(w) {
     box.appendChild(weatherRow("humidity", "濕度", w.humidity + "%", humidityLevel(w.humidity)));
     box.appendChild(weatherRow("rain", "降雨", w.rain === null ? "—" : w.rain + "%", rainLevel(w.rain)));
   } else {
-    box.appendChild(el("div", { class: "w-msg", text: "天氣暫時讀不到" }));
+    box.appendChild(el("div", { class: "w-msg", text: "天氣暫時查不到" }));
   }
 }
 
@@ -274,7 +275,7 @@ function useTaipei() {
 
 function locationFailed() {
   weather.loc = TAIPEI;
-  weather.error = "無法取得位置";
+  weather.error = "抓不到你的位置";
   store.set(KEY.geo, "0");
   renderWeather(null);
 }
@@ -369,10 +370,10 @@ function isLatest() {
   return !state.index.length || !state.current || state.current.id === state.index[0].id;
 }
 
-/** 時間格上的字：早上／中午／晚上。同一天有兩份落在同一時段（例如手動觸發留下的）就多寫幾點幾分區分 */
+/** 時間格上的字：早報／午報／晚報。同一天有兩份落在同一期（例如手動觸發留下的）就多寫幾點幾分區分 */
 function slotText(d, siblings) {
-  const label = slotLabelOf(d.generatedAt);
-  const dup = siblings.filter((x) => slotLabelOf(x.generatedAt) === label).length > 1;
+  const label = editionName(d.generatedAt);
+  const dup = siblings.filter((x) => editionName(x.generatedAt) === label).length > 1;
   return dup ? label + " " + timeOfDay(d.generatedAt) : label;
 }
 
@@ -391,7 +392,7 @@ function dayBlock(g) {
   const title = g.label === g.dateText ? g.label : g.label + "　" + g.dateText;
   day.appendChild(el("h4", { text: title }));
   const slots = el("div", { class: "slots" });
-  // 同一天裡早上、中午、晚上由左到右（groupByDay 給的是新到舊，這裡反過來）
+  // 同一天裡早報、午報、晚報由左到右（groupByDay 給的是新到舊，這裡反過來）
   for (const d of [...g.items].reverse()) slots.appendChild(slotButton(d, g.items));
   day.appendChild(slots);
   return day;
@@ -411,7 +412,7 @@ function renderMenu() {
   const alive = state.index.filter((d) => Date.now() - Date.parse(d.generatedAt) < DIGEST_RETENTION_DAYS * 86400_000);
   const groups = groupByDay(alive, Date.now());
   if (!groups.length) {
-    menu.appendChild(el("p", { class: "menu-empty", text: "還沒有摘要" }));
+    menu.appendChild(el("p", { class: "menu-empty", text: "還沒有任何一期" }));
   }
   for (const g of groups.slice(0, MENU_DAYS_OPEN)) menu.appendChild(dayBlock(g));
   const older = groups.slice(MENU_DAYS_OPEN);
@@ -426,7 +427,7 @@ function renderMenu() {
   const cur = $("#time-cur");
   if (!isLatest() && state.current) {
     const g = groupByDay([state.current], Date.now())[0];
-    cur.textContent = g.label + " " + slotLabelOf(state.current.generatedAt);
+    cur.textContent = g.label + " " + editionName(state.current.generatedAt);
     cur.hidden = false;
   } else {
     cur.hidden = true;
@@ -485,50 +486,116 @@ function renderHeadline(text, region, url) {
   return h;
 }
 
-function renderEvent(e, region) {
-  const art = el("article", { class: "event" });
-  if (e.imageUrl && /^https:\/\//i.test(e.imageUrl)) {
-    // 直接引用媒體的圖；不送 Referer（避免被防盜連），載入失敗就整張拿掉
-    const img = el("img", { class: "thumb", src: e.imageUrl, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" });
-    img.addEventListener("error", () => {
-      img.remove();
-      art.classList.remove("has-thumb");
-    });
-    art.classList.add("has-thumb");
-    art.appendChild(img);
+/** 依目前還在的圖片張數調整卡片版面（有圖／一張／兩張）；圖片載入失敗被拿掉後也會再呼叫 */
+function syncThumbs(art) {
+  const n = art.querySelectorAll("img.thumb").length;
+  art.classList.toggle("has-thumb", n > 0);
+  art.classList.toggle("thumbs-1", n === 1 && art.classList.contains("lead"));
+  art.classList.toggle("thumbs-2", n === 2);
+  const box = art.querySelector(".thumbs");
+  if (box && !n) box.remove();
+}
+
+function renderEvent(e, region, i) {
+  const art = el("article", { class: "event " + (i === 0 ? "lead" : "compact") });
+  // 圖：頭條卡片最多兩張並排（有兩張不同的圖就都放，免得把一張小圖拉得又寬又糊）；其餘卡片只放第一張。
+  // 直接引用媒體的圖；不送 Referer（避免被防盜連），載入失敗就把那張拿掉
+  const urls = [];
+  const wanted = i === 0 && Array.isArray(e.imageUrls) && e.imageUrls.length > 1 ? e.imageUrls : [e.imageUrl];
+  for (const u of wanted) if (u && /^https:\/\//i.test(u) && !urls.includes(u)) urls.push(u);
+  if (urls.length) {
+    const box = i === 0 ? el("div", { class: "thumbs" }) : null;
+    for (const u of urls.slice(0, 2)) {
+      const img = el("img", { class: "thumb", src: u, alt: "", loading: i === 0 ? "eager" : "lazy", decoding: "async", referrerpolicy: "no-referrer" });
+      img.addEventListener("error", () => {
+        img.remove();
+        syncThumbs(art);
+      });
+      (box || art).appendChild(img);
+    }
+    if (box) art.appendChild(box);
+    syncThumbs(art);
   }
-  if (Array.isArray(e.categories) && e.categories.length) {
-    // 新聞類型標籤（右上角）；舊的摘要沒有這個欄位就不顯示
-    const cats = el("div", { class: "cats", "aria-label": "類型" });
+  const body = el("div", { class: "body" });
+  // 第一列：類型字幕條（左）＋編號（右）；舊的摘要沒有類型欄位就只有編號
+  const meta = el("div", { class: "meta" });
+  const cats = el("div", { class: "cats", "aria-label": "類型" });
+  if (Array.isArray(e.categories)) {
     for (const c of e.categories.slice(0, 3)) cats.appendChild(el("span", { class: "cat", text: String(c) }));
-    art.classList.add("has-cats");
-    art.appendChild(cats);
   }
+  meta.appendChild(cats);
+  meta.appendChild(el("span", { class: "no", "aria-hidden": "true", text: String(i + 1).padStart(2, "0") }));
+  body.appendChild(meta);
   // 整張卡片可以點：標題連結（第一個來源）用 ::after 蓋滿整張卡片；下方各來源的連結在它上面，照樣可以單獨點
-  art.appendChild(renderHeadline(e.headline, region, e.sources[0] ? e.sources[0].url : "#"));
-  art.appendChild(el("p", { text: e.summary }));
+  body.appendChild(renderHeadline(e.headline, region, e.sources[0] ? e.sources[0].url : "#"));
+  body.appendChild(el("p", { class: "summary", text: e.summary }));
   if (e.disputed) {
-    art.appendChild(el("p", { class: "disputed" }, [el("b", { text: "各來源說法不同：" }), document.createTextNode(e.disputed)]));
+    body.appendChild(el("p", { class: "disputed" }, [el("b", { text: "各來源說法不同：" }), document.createTextNode(e.disputed)]));
   }
   const srcs = el("div", { class: "srcs" });
   srcs.appendChild(el("span", { class: "src-label", text: "來源" }));
   for (const s of e.sources) {
     srcs.appendChild(el("a", { href: safeHref(s.url), target: "_blank", rel: "noopener noreferrer", title: s.title, text: s.name }));
   }
-  art.appendChild(srcs);
+  body.appendChild(srcs);
+  art.appendChild(body);
   return art;
 }
 
 function renderPanel(region, r) {
   const panel = $("#panel-" + region);
   panel.textContent = "";
-  if (r.error) panel.appendChild(el("p", { class: "err", text: "這個區塊的摘要產生失敗：" + r.error }));
-  else if (r.articleCount === 0) panel.appendChild(el("p", { class: "empty", text: "這段期間沒有抓到新文章。" }));
-  else if (r.events.length === 0) panel.appendChild(el("p", { class: "empty", text: "這段期間沒有達到摘要標準的重點新聞。" }));
+  if (r.error) panel.appendChild(el("p", { class: "err", text: "這一頁沒整理成功：" + r.error }));
+  else if (r.articleCount === 0) panel.appendChild(el("p", { class: "empty", text: "這個時段各家媒體都沒有新文章。" }));
+  else if (r.events.length === 0) panel.appendChild(el("p", { class: "empty", text: "這個時段沒有特別值得整理的大事。" }));
+  // 第一則是頭條（大圖大標題），其餘排成兩欄的緊湊卡片
+  const list = el("div", { class: "events" });
   r.events.forEach((e, i) => {
-    const card = renderEvent(e, region);
+    const card = renderEvent(e, region, i);
     card.style.setProperty("--i", String(Math.min(i, 8))); // 進場延遲的順序，最多算到第 9 張，避免後面的等太久
-    panel.appendChild(card);
+    list.appendChild(card);
+  });
+  panel.appendChild(list);
+}
+
+/** 頁面上方的期別列：「午報」＋日期與整理的時間；看的是舊的一期時多一個「往期」 */
+function renderIssue(d) {
+  const box = $("#issue");
+  box.textContent = "";
+  const g = groupByDay([d], Date.now())[0];
+  box.appendChild(el("span", { class: "issue-name", text: editionName(d.generatedAt) }));
+  box.appendChild(el("span", { class: "issue-when", text: g.dateText + "　" + timeOfDay(d.generatedAt) }));
+  if (!isLatest()) box.appendChild(el("span", { class: "issue-old", text: "往期" }));
+  box.hidden = false;
+}
+
+/** 最上方的頭條跑馬燈：台灣前三則、世界前兩則；滑鼠移上去會暫停 */
+function renderTicker(d) {
+  const picks = [];
+  for (const [k, n] of [["tw", 3], ["world", 2]]) {
+    for (const e of (d.regions[k].events || []).slice(0, n)) picks.push(e);
+  }
+  const box = $("#ticker");
+  const track = $("#ticker-track");
+  track.textContent = "";
+  if (!picks.length) { box.hidden = true; return; }
+  const makeSet = (hidden) => {
+    const set = el("div", { class: "ticker-set" });
+    if (hidden) set.setAttribute("aria-hidden", "true");
+    for (const e of picks) {
+      const a = el("a", { href: safeHref(e.sources[0] ? e.sources[0].url : "#"), target: "_blank", rel: "noopener noreferrer", text: e.headline });
+      if (hidden) a.tabIndex = -1;
+      set.appendChild(a);
+    }
+    return set;
+  };
+  track.appendChild(makeSet(false));
+  track.appendChild(makeSet(true));
+  box.hidden = false;
+  // 速度固定（約每秒 70px），文字越長繞一圈越久
+  requestAnimationFrame(() => {
+    const w = track.firstChild.getBoundingClientRect().width;
+    track.style.setProperty("--ticker-dur", Math.max(20, Math.round(w / 70)) + "s");
   });
 }
 
@@ -567,12 +634,14 @@ function renderDigest(d) {
   state.current = d;
   showMsg("");
   for (const k of TABS) renderPanel(k, d.regions[k]);
+  renderIssue(d);
+  renderTicker(d);
   renderStatus(d);
   renderMenu();
 }
 
 function renderEmpty() {
-  showMsg("還沒有摘要，排程第一次執行後，這裡會出現內容。");
+  showMsg("今天的新聞還沒整理出來，排程跑完之後這裡就會有內容。");
   $("#status").hidden = true;
 }
 
@@ -582,7 +651,7 @@ function select(id) {
   if (state.current && state.current.id === id) return;
   getJson("/api/digest?id=" + encodeURIComponent(id))
     .then((j) => renderDigest(j.digest))
-    .catch(() => showMsg("這份摘要已經過期，讀不到了。"));
+    .catch(() => showMsg("這一期太久以前了，已經被清掉囉。"));
 }
 
 // ── 啟動 ────────────────────────────────────────────
@@ -605,5 +674,5 @@ Promise.all([getJson("/api/latest"), getJson("/api/digests")])
     store.set(KEY.visit, String(Date.now()));
   })
   .catch(() => {
-    showMsg("讀取失敗，請稍後重新整理。");
+    showMsg("新聞沒載進來，晚點再重新整理看看。");
   });

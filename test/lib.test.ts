@@ -41,6 +41,14 @@ test("slotLabel：早上／中午／晚上（07:00、12:00、18:00 的排程各�
   assert.deepEqual([0, 4, 5, 10, 11, 14, 15, 23].map(lib.slotLabel), ["深夜", "深夜", "早上", "早上", "中午", "中午", "晚上", "晚上"]);
 });
 
+test("editionName：早報／午報／晚報", () => {
+  const f = (iso: string) => lib.editionName(iso, "Asia/Taipei");
+  assert.equal(f("2026-11-04T23:00:00Z"), "早報"); // 台北 07:00
+  assert.equal(f("2026-11-05T04:00:00Z"), "午報"); // 台北 12:00
+  assert.equal(f("2026-11-05T10:00:00Z"), "晚報"); // 台北 18:00
+  assert.equal(f("2026-11-04T16:00:00Z"), "深夜版"); // 台北 00:00
+});
+
 test("groupByDay：依天分組、新的在前、今天／昨天標籤", () => {
   const now = Date.parse("2026-11-05T01:00:00Z"); // 台北 11/05 09:00
   const e = (iso: string) => ({ id: iso, generatedAt: iso });

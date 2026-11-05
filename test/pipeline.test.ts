@@ -213,3 +213,33 @@ test("縮圖：優先用 RSS 圖；沒有就讀文章網頁的 og:image；都沒
   assert.equal(by["完全沒圖"], undefined);
   assert.ok(!calls.includes("https://f.test/1"), "已有 RSS 圖就不必讀網頁");
 });
+
+test("縮圖：事件引用的不同文章各有圖時，最多留 2 張不重複的（imageUrls），第一張同時放在 imageUrl", async () => {
+  const kv = fakeKV();
+  const env = { NEWS: kv } as unknown as Env;
+  const mk = (title: string, link: string, img: string) =>
+    `<item><title>${title}</title><link>${link}</link><description>${title}</description><pubDate>${new Date(NOW.getTime() - 600_000).toUTCString()}</pubDate><enclosure url="${img}" type="image/jpeg"/></item>`;
+  const f = (async () =>
+    new Response(
+      `<rss><channel>${mk("甲", "https://f.test/a", "https://img.test/a.jpg")}${mk("乙", "https://f.test/b", "https://img.test/a.jpg")}${mk("丙", "https://f.test/c", "https://img.test/c.jpg")}${mk("丁", "https://f.test/d", "https://img.test/d.jpg")}</channel></rss>`,
+    )) as unknown as typeof fetch;
+  const summarizer: ChosenSummarizer = {
+    name: "fake",
+    model: "m",
+    run: async (input) =>
+      input.region === "tw"
+        ? [
+            { headline: "多圖", summary: "s", disputed: null, articleIds: input.articles.slice(0, 3).map((a) => a.id) },
+            { headline: "單圖", summary: "s", disputed: null, articleIds: [input.articles[3].id] },
+          ]
+        : [],
+  };
+  const { digest } = await runPipeline(env, { fetch: f, now: NOW, summarizer, feeds: [{ region: "tw", name: "F", url: "https://f.test/feed" }] });
+  const multi = digest.regions.tw.events.find((e) => e.headline === "多圖")!;
+  assert.equal(multi.imageUrls?.length, 2);
+  assert.equal(new Set(multi.imageUrls).size, 2);
+  assert.equal(multi.imageUrl, multi.imageUrls![0]);
+  const single = digest.regions.tw.events.find((e) => e.headline === "單圖")!;
+  assert.equal(single.imageUrls, undefined);
+  assert.ok(single.imageUrl);
+});

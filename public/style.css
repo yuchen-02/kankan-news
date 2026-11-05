@@ -9,26 +9,36 @@
   --m-stagger: 55ms;
   --m-lift: -2px;
   --m-press: 0.96;
-  --bg: #edf0f2;
-  --ink: #15222d;
-  --muted: #5a6b79;
-  --rule: #cbd4da;
-  --accent: #2c5a86;
-  --accent-soft: rgba(44, 90, 134, 0.09);
-  --new: #b7791f;
-  --on-accent: #ffffff;
+  /* 配色：近黑＋消光黃（終末地那種工業感）。黃色刻意壓低亮度，只當色塊底色、上面放深色字，避免長時間閱讀刺眼 */
+  --bg: #e9eaea;
+  --card: #f4f4f2;
+  --card-hover: #fcfcfa;
+  --ink: #1c1e21;
+  --muted: #5d6268;
+  --rule: #c8cbcd;
+  --accent: #25282c;
+  --accent-soft: rgba(37, 40, 44, 0.07);
+  --new: #9a6a00;
+  --on-accent: #e3c24a;
+  --signal: #d9b93b;
+  --on-signal: #1b1c1e;
+  --strip: #26292d;
+  --strip-ink: #ecece8;
+  --page-bg: url("/bg-light.webp"); /* 整頁底圖：很淡的網點與斜帶；固定不動，捲動時卡片就像浮在它上面 */
+  --num: "Barlow Condensed", "Noto Sans TC", sans-serif;
 
-  /* 橫幅：圖片依寬度等比例縮放，上下各裁掉 --banner-crop，左右兩側淡出到頁面背景。
+  /* 橫幅：圖片依寬度等比例縮放，上方裁掉 --banner-crop-top、下方裁掉 --banner-crop-bottom，左右兩側淡出到頁面背景。
      換圖片時改 --banner-image，並把 --banner-w / --banner-h 改成新圖片的寬、高（像素）。
-     --banner-crop：上下各裁掉的比例（0.2 = 20%，0 = 不裁切）。
+     --banner-crop-top / --banner-crop-bottom：上、下各裁掉的比例（0.3 = 30%，0 = 不裁切）。
      --banner-fade：左右各淡出多寬（相對橫幅寬度，0% = 不淡出）。
      --banner-max-width：橫幅在寬螢幕上的最大寬度，圖片會跟著等比例縮小。 */
-  --banner-color: #33495c;
+  --banner-color: #2a2d31;
   --banner-image: url("/news_image.webp");
   --banner-w: 2048;
-  --banner-h: 768;
-  --banner-crop: 0.2;
-  --banner-fade: 14%;
+  --banner-h: 614;
+  --banner-crop-top: 0.1;
+  --banner-crop-bottom: 0.22;
+  --banner-fade: 5%;
   --banner-max-width: 1100px;
   --banner-scrim: transparent;
   --banner-ink: #f4f7f9;
@@ -52,15 +62,20 @@
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --bg: #0e1822;
-  --ink: #e4ebf0;
-  --muted: #93a4b3;
-  --rule: #26394a;
-  --accent: #7db0e0;
-  --accent-soft: rgba(125, 176, 224, 0.12);
-  --new: #e3b04b;
-  --on-accent: #0e1822;
-  --banner-color: #1b2c3b;
+  --bg: #121416;
+  --card: #1b1e21;
+  --card-hover: #25292d;
+  --ink: #e6e6e2;
+  --muted: #9a9fa5;
+  --rule: #2e3237;
+  --accent: #cfae38;
+  --accent-soft: rgba(207, 174, 56, 0.12);
+  --new: #d9a840;
+  --on-accent: #17191b;
+  --signal: #c9a834;
+  --strip: #3a3f45;
+  --banner-color: #1b1e21;
+  --page-bg: url("/bg-dark.webp");
 
   --tone-0: #2b3a4a;
   --tone-1: #43372f;
@@ -81,7 +96,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--bg) var(--page-bg) center / cover no-repeat fixed;
   color: var(--ink);
   font: 400 1rem/1.75 var(--sans);
 }
@@ -93,16 +108,16 @@ a { color: inherit; }
 .banner {
   position: relative; isolation: isolate; color: var(--banner-ink);
   width: 100%; max-width: var(--banner-max-width); margin: 0 auto;
-  aspect-ratio: calc(var(--banner-w) / (var(--banner-h) * (1 - 2 * var(--banner-crop))));
+  aspect-ratio: calc(var(--banner-w) / (var(--banner-h) * (1 - var(--banner-crop-top) - var(--banner-crop-bottom))));
   overflow: hidden;
 }
 .banner-bg {
   position: absolute; inset: 0; z-index: -2;
   background-color: var(--banner-color);
   background-image: var(--banner-image);
-  background-size: 100% auto; /* 寬度剛好填滿；橫幅比圖片矮，置中顯示就是上下各裁掉 --banner-crop */
+  background-size: 100% auto; /* 寬度剛好填滿；橫幅比圖片矮，依下方的 position 決定裁掉上方或下方 */
   background-repeat: no-repeat;
-  background-position: center;
+  background-position: center calc(var(--banner-crop-top) / (var(--banner-crop-top) + var(--banner-crop-bottom)) * 100%);
   /* 左右兩側淡出到頁面背景 */
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--banner-fade), #000 calc(100% - var(--banner-fade)), transparent 100%);
   mask-image: linear-gradient(to right, transparent 0, #000 var(--banner-fade), #000 calc(100% - var(--banner-fade)), transparent 100%);
@@ -120,7 +135,7 @@ a { color: inherit; }
   position: absolute; top: 12px; right: 14px; z-index: 1;
   width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer;
   color: #ffffff; background: rgba(12, 22, 32, 0.82);
-  border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
 }
@@ -162,13 +177,19 @@ a { color: inherit; }
 .weather .place { font-weight: 600; }
 .w-row { display: grid; grid-template-columns: 22px 2.6em 3.6em 5.4em; align-items: center; column-gap: 8px; line-height: 1.5; }
 .w-ic { display: grid; place-items: center; width: 22px; height: 22px; color: var(--accent); }
+.w-ic-temp { color: #c4562f; }
+.w-ic-humidity { color: #1f4a8a; }
+.w-ic-rain { color: #2f7f86; }
+:root[data-theme="dark"] .w-ic-temp { color: #e58a5f; }
+:root[data-theme="dark"] .w-ic-humidity { color: #6f9fe0; }
+:root[data-theme="dark"] .w-ic-rain { color: #5fb7b8; }
 .w-ic svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .w-k { color: var(--muted); }
 .w-v { font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
 .w-n { color: var(--muted); font-size: 0.85rem; text-align: right; }
 .geo-btn {
   flex: none; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer;
-  color: var(--accent); background: transparent; border: 1px solid var(--rule); border-radius: 50%;
+  color: var(--accent); background: transparent; border: 1px solid var(--rule); border-radius: 6px;
 }
 .geo-btn:hover { border-color: var(--accent); }
 .geo-btn.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -185,15 +206,16 @@ a { color: inherit; }
 
 
 /* ── 台灣／世界 分頁 ────────────────────────────── */
-.tabs { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.tabs { display: inline-flex; gap: 4px; }
 .tab {
-  display: inline-flex; align-items: baseline; gap: 8px; min-height: 44px; padding: 12px 26px;
-  font: 500 0.95rem/1 var(--sans); color: var(--muted); background: transparent; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 12px 30px 12px 24px;
+  font: 700 0.95rem/1 var(--sans); letter-spacing: 0.08em; color: var(--muted); background: var(--card); border: 0; cursor: pointer;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%); /* 斜切的字幕條形狀 */
 }
-.tab + .tab { border-left: 1px solid var(--rule); }
 .tab:hover { color: var(--ink); }
 .tab[aria-selected="true"] { background: var(--accent); color: var(--on-accent); }
 .tab:focus-visible { outline-offset: -4px; }
+.tab-en { font: 600 0.72rem/1 var(--num); letter-spacing: 0.16em; opacity: 0.65; }
 /* 分頁圖示：用圖檔當遮罩，顏色跟著文字走（選中時白色、未選中時灰色，亮暗模式都適用） */
 .tab-ic {
   display: inline-block; width: 18px; height: 18px; align-self: center; background-color: currentColor;
@@ -202,26 +224,17 @@ a { color: inherit; }
 .ic-taiwan { --ic: url("/tab-taiwan.png"); }
 .ic-globe { --ic: url("/tab-globe.png"); }
 
-.event {
-  margin-top: 14px; padding: 20px 22px; border: 1px solid var(--rule); border-radius: 12px;
-  background: color-mix(in srgb, var(--bg) 86%, var(--ink) 3%);
-}
-.event:first-child { margin-top: 20px; }
-.event h3 { margin: 0 0 8px; display: flex; align-items: center; gap: 12px; font: 700 1.15rem/1.5 var(--serif); }
 .event h3 .ht { min-width: 0; }
 .event { position: relative; cursor: pointer; }
 .card-link { min-width: 0; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
 .card-link::after { content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit; } /* 讓整張卡片都可以點 */
-.event:hover .ht { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .card-link:focus-visible { outline: none; }
-.event:has(.card-link:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
 .srcs a, .srcs .src-label { position: relative; z-index: 1; }
 .cn { background: var(--ink-tone, transparent); padding: 1px 7px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
 .flags { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 34px; }
 .flags img { display: block; width: 100%; height: auto; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18); }
 .flags.n2 img { width: 24px; }
 .flags.n3 img { width: 18px; }
-.event p { margin: 0; max-width: 38em; }
 .tone-0 { --ink-tone: var(--tone-0); }
 .tone-1 { --ink-tone: var(--tone-1); }
 .tone-2 { --ink-tone: var(--tone-2); }
@@ -264,7 +277,7 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 .time-cur { color: var(--muted); font-size: 0.85rem; }
 .time-btn {
   position: relative; width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer;
-  color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 50%;
+  color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 6px;
 }
 .time-btn:hover { border-color: var(--accent); color: var(--accent); }
 .time-btn[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -277,11 +290,11 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 .time-menu {
   position: absolute; z-index: 30; top: calc(100% + 8px); right: 0;
   width: min(330px, calc(100vw - 32px)); max-height: min(70vh, 480px); overflow-y: auto; overscroll-behavior: contain;
-  padding: 10px 14px 14px; background: var(--bg); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 10px 14px 14px; background: var(--card); border: 1px solid var(--rule); border-top: 3px solid var(--signal); border-radius: 0;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
   animation: rise var(--m-fast) var(--m-ease) backwards;
 }
-:root[data-theme="dark"] .time-menu { background: #14212d; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
+:root[data-theme="dark"] .time-menu { background: #1b1e21; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
 .time-menu .day { padding: 8px 0; }
 .time-menu .day + .day { border-top: 1px solid var(--rule); }
 .time-menu h4 { margin: 0 0 8px; font: 600 0.88rem/1.4 var(--sans); color: var(--muted); }
@@ -289,7 +302,7 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 .slot {
   position: relative; min-height: 36px; padding: 6px 14px; cursor: pointer;
   font: 500 0.9rem/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--ink);
-  background: transparent; border: 1px solid var(--rule); border-radius: 8px;
+  background: transparent; border: 1px solid var(--rule); border-radius: 2px;
 }
 .slot:hover { border-color: var(--accent); }
 .slot[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -302,26 +315,95 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 .older { margin-top: 6px; border-top: 1px solid var(--rule); }
 .older summary { padding: 10px 0 4px; cursor: pointer; color: var(--muted); font-size: 0.88rem; }
 
-/* ── 卡片版面：標題在左、類型標籤在右上；有縮圖時縮圖放在右欄標籤下面 ── */
-.event { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: start; }
-.event > * { grid-column: 1 / -1; }
-.event > h3 { grid-column: 1; grid-row: 1; }
-.event > .cats { grid-column: 2; grid-row: 1; justify-self: end; }
-.event.has-thumb > :not(h3):not(.cats):not(.thumb) { grid-column: 1; }
-.event.has-thumb > .thumb { grid-column: 2; grid-row: 2 / span 8; width: 150px; height: 100px; object-fit: cover; border-radius: 8px; background: var(--rule); }
-.event.has-thumb:not(.has-cats) > .thumb { grid-row: 1 / span 9; }
-
-.cats { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 200px; }
-.cat {
-  padding: 2px 10px; border-radius: 999px; font: 500 0.78rem/1.6 var(--sans); white-space: nowrap;
-  color: var(--accent); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+/* ── 卡片：第一則是頭條（大圖＋大標題），其餘兩欄；右上角斜切 ── */
+.events { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; filter: drop-shadow(0 6px 10px rgba(20, 24, 28, 0.14)); }
+:root[data-theme="dark"] .events { filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55)); }
+.event {
+  --cut: 16px; position: relative; cursor: pointer; min-width: 0;
+  background: var(--card);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
 }
+.event::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; border: 2px solid transparent; }
+.event:has(.card-link:focus-visible)::before { border-color: var(--accent); }
+.body { position: relative; padding: 14px 18px 16px 22px; box-shadow: inset 4px 0 0 var(--signal); min-width: 0; }
+.event h3 { margin: 0 0 8px; font: 700 1.05rem/1.5 var(--sans); }
+.event h3 .ht { min-width: 0; }
+.summary { margin: 0; font-size: 0.95rem; }
+.thumb { display: block; width: 100%; object-fit: cover; background: var(--rule); }
 
-@media (max-width: 560px) {
-  .event { grid-template-columns: minmax(0, 1fr); }
-  .event > h3, .event > .cats { grid-column: 1; grid-row: auto; }
-  .event > .cats { order: -1; justify-self: start; justify-content: flex-start; max-width: none; margin-bottom: 10px; }
-  .event.has-thumb > .thumb { grid-column: 1; grid-row: auto; order: -2; width: 100%; height: auto; aspect-ratio: 16 / 9; margin-bottom: 12px; }
+.event.lead { grid-column: 1 / -1; --cut: 28px; }
+/* 頭條的圖：兩張就並排；只有一張就放左邊、文字在右邊，不再把小圖拉到整個寬度而變糊 */
+.thumbs { display: grid; gap: 3px; min-width: 0; }
+.event.lead.thumbs-2 .thumbs { grid-template-columns: 1fr 1fr; }
+.event.lead.thumbs-2 .thumb { aspect-ratio: 16 / 10; }
+.event.lead.thumbs-1 { display: grid; grid-template-columns: minmax(0, 42%) minmax(0, 1fr); }
+.event.lead.thumbs-1 .thumbs { height: 100%; }
+.event.lead.thumbs-1 .thumb { height: 100%; min-height: 250px; }
+.event.lead .body { padding: 16px 24px 20px 28px; }
+.event.lead h3 { font-weight: 900; font-size: clamp(1.4rem, 3.4vw, 1.9rem); line-height: 1.38; margin-bottom: 10px; }
+.event.lead .summary { font-size: 1.02rem; max-width: 40em; }
+.event.lead .no { font-size: 2rem; }
+
+/* 緊湊卡片數量是單數時，最後一張獨佔一整列，避免右邊空一格 */
+.events > .event.compact:last-child:nth-child(even) { grid-column: 1 / -1; }
+
+/* 緊湊卡片：有縮圖時，縮圖在左邊貼齊卡片 */
+.event.compact.has-thumb { display: grid; grid-template-columns: 112px minmax(0, 1fr); }
+.event.compact.has-thumb .thumb { height: 100%; min-height: 128px; }
+
+/* 第一列：類型字幕條（左）＋編號（右） */
+.meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.cats { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.cat {
+  display: inline-block; padding: 2px 16px 2px 12px; white-space: nowrap;
+  font: 700 0.74rem/1.7 var(--sans); letter-spacing: 0.14em;
+  color: var(--strip-ink); background: var(--strip);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+.cat:first-child { color: var(--on-signal); background: var(--signal); } /* 第一個類型是主類型，用黃色 */
+.no { flex: none; font: 700 1.35rem/1 var(--num); letter-spacing: 0.04em; color: var(--muted); opacity: 0.7; font-style: italic; }
+
+/* 這一期的名字：黃色斜切色塊，「往期」像蓋上去的印章 */
+.issue { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 22px; }
+.issue-name {
+  padding: 7px 26px 7px 18px; font: 900 1.4rem/1 var(--sans); letter-spacing: 0.14em;
+  color: var(--on-signal); background: var(--signal);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+.issue-when { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.issue-old {
+  padding: 1px 10px; border: 2px solid var(--muted); color: var(--muted); border-radius: 3px;
+  font: 700 0.8rem/1.6 var(--sans); letter-spacing: 0.25em; transform: rotate(-4deg);
+}
+.tabs-row { margin-top: 14px; }
+
+/* 最上方的頭條跑馬燈 */
+.ticker { display: flex; align-items: stretch; background: #1b1d20; color: #ecece8; border-top: 3px solid var(--signal); overflow: hidden; }
+.ticker-label {
+  position: relative; z-index: 1; flex: none; width: 44px; background: var(--signal);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+}
+.ticker-view {
+  flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+.ticker-track { display: flex; width: max-content; animation: ticker var(--ticker-dur, 40s) linear infinite; }
+.ticker-set { display: flex; flex: none; }
+.ticker-set a { white-space: nowrap; padding: 9px 0; color: inherit; text-decoration: none; font-size: 0.92rem; }
+.ticker-set a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.ticker-set a::after { content: "◆"; margin: 0 22px; color: var(--signal); font-size: 0.6em; vertical-align: 0.15em; }
+.ticker:hover .ticker-track, .ticker:focus-within .ticker-track { animation-play-state: paused; }
+@keyframes ticker { to { transform: translateX(-50%); } }
+
+@media (max-width: 640px) {
+  .events { grid-template-columns: minmax(0, 1fr); }
+  .event.compact.has-thumb { grid-template-columns: 96px minmax(0, 1fr); }
+  .event.lead.thumbs-1 { display: block; }
+  .event.lead.thumbs-1 .thumb { height: auto; min-height: 0; aspect-ratio: 16 / 9; }
+  .ticker-label { width: 34px; }
+  .tab-en { display: none; } /* 窄螢幕不放英文小字，免得分頁擠到換行 */
+  .tab { padding: 12px 26px 12px 18px; white-space: nowrap; }
 }
 
 /* ── 動態效果 ───────────────────────────────────── */
@@ -348,14 +430,15 @@ html[data-motion="lively"] {
 .event {
   animation: rise var(--m-dur) var(--m-ease) backwards;
   animation-delay: calc(var(--i, 0) * var(--m-stagger));
-  transition: transform var(--m-fast) var(--m-ease), box-shadow var(--m-fast) var(--m-ease), border-color var(--m-fast) ease;
+  transition: transform var(--m-fast) var(--m-ease), background-color var(--m-fast) ease;
 }
-.event:hover {
-  transform: translateY(var(--m-lift));
-  border-color: var(--accent);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+.event::before { transition: border-color var(--m-fast) ease; }
+/* 滑鼠移上去：卡片放大、浮到鄰居上面、邊框變黃（只在真的有滑鼠的裝置） */
+@media (hover: hover) {
+  .event:hover { z-index: 3; transform: scale(1.035); background: var(--card-hover); }
+  .event.lead:hover { transform: scale(1.012); }
+  .event:hover::before { border-color: var(--signal); }
 }
-:root[data-theme="dark"] .event:hover { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
 
 .thumb { animation: fade var(--m-dur) ease backwards; }
 .flags img { animation: fade var(--m-dur) ease backwards; }
@@ -385,4 +468,6 @@ html.theme-fading *::after {
     scroll-behavior: auto !important;
   }
   .event:hover { transform: none; }
+  .ticker-track { animation: none; }
+  .ticker-view { overflow-x: auto; }
 }

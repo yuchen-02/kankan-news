@@ -192,6 +192,15 @@ export function slotLabel(hour) {
   return "晚上";
 }
 
+/**
+ * 「期別」名稱：07:00 早報、12:00 午報、18:00 晚報（其餘時間，例如舊資料或手動留下的，叫「深夜版」）。
+ * 用在頁面上方的期別列與時間選單。
+ */
+export function editionName(iso, tz) {
+  const l = slotLabelOf(iso, tz);
+  return l === "早上" ? "早報" : l === "中午" ? "午報" : l === "晚上" ? "晚報" : "深夜版";
+}
+
 /** 這份摘要（ISO 時間）在使用者本機時區的時段名稱 */
 export function slotLabelOf(iso, tz) {
   return slotLabel(parseInt(timeOfDay(iso, tz).slice(0, 2), 10));

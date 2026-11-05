@@ -179,15 +179,17 @@ const OG_FETCH_BUDGET = 24;
 const OG_TRIES_PER_EVENT = 2;
 
 /**
- * 每個事件的縮圖：先用引用文章裡「第一篇有圖的」RSS 圖片；
+ * 每個事件的縮圖：先用引用文章裡的 RSS 圖片（最多 2 張不同的）；
  * 都沒有的話，依序去讀該事件前幾篇文章的網頁找 og:image（受總量上限限制）。找不到就不放圖。
  */
 async function attachImages(items: EventWithArticles[], f: typeof fetch, budget: { left: number }): Promise<void> {
   await Promise.all(
     items.map(async ({ event, articles }) => {
-      const fromFeed = articles.find((a) => a.imageUrl)?.imageUrl;
-      if (fromFeed) {
-        event.imageUrl = fromFeed;
+      // 引用的文章裡，不同文章各自帶的 RSS 圖（去重、最多 2 張）；有兩張時頭條卡片可以並排顯示
+      const feedImages = [...new Set(articles.map((a) => a.imageUrl).filter((u): u is string => !!u))].slice(0, 2);
+      if (feedImages.length) {
+        event.imageUrl = feedImages[0];
+        if (feedImages.length > 1) event.imageUrls = feedImages;
         return;
       }
       for (const a of articles.slice(0, OG_TRIES_PER_EVENT)) {
