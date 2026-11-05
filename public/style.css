@@ -25,6 +25,7 @@
   --strip: #26292d;
   --strip-ink: #ecece8;
   --page-bg: url("/bg-light.webp"); /* 整頁底圖：很淡的網點與斜帶；固定不動，捲動時卡片就像浮在它上面 */
+  --clock-ink: #0a0b0c; /* 亮色模式的時鐘用最深的黑，在灰底上最清楚 */
   --num: "Barlow Condensed", "Noto Sans TC", sans-serif;
 
   /* 橫幅：圖片依寬度等比例縮放，上方裁掉 --banner-crop-top、下方裁掉 --banner-crop-bottom，左右兩側淡出到頁面背景。
@@ -75,6 +76,7 @@
   --signal: #c9a834;
   --strip: #3a3f45;
   --banner-color: #1b1e21;
+  --clock-ink: var(--ink);
   --page-bg: url("/bg-dark.webp");
 
   --tone-0: #2b3a4a;
@@ -162,7 +164,7 @@ a { color: inherit; }
 .clock-time { display: inline-flex; align-items: center; gap: 5px; height: 34px; transform: skewX(-6deg); }
 .seg-digit { height: 100%; width: auto; aspect-ratio: 60 / 100; }
 .seg-colon { height: 100%; width: auto; aspect-ratio: 20 / 100; }
-.seg { fill: var(--ink); opacity: 0.08; }
+.seg { fill: var(--clock-ink, var(--ink)); opacity: 0.08; }
 .seg.on { opacity: 1; }
 .seg-colon .seg.on { animation: blink 2s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
@@ -274,7 +276,6 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 /* ── 分頁列：左邊台灣／世界，右邊時間選單（日曆按鈕） ── */
 .tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
 .time-pick { position: relative; display: flex; align-items: center; gap: 10px; }
-.time-cur { color: var(--muted); font-size: 0.85rem; }
 .time-btn {
   position: relative; width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer;
   color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 6px;
@@ -400,6 +401,7 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
   .events { grid-template-columns: minmax(0, 1fr); }
   .event.compact.has-thumb { grid-template-columns: 96px minmax(0, 1fr); }
   .event.lead.thumbs-1 { display: block; }
+  .event.lead.thumbs-1 .thumbs { height: auto; } /* 手機上圖在文字上面；height:100% 會讓圖片區塊撐滿整張卡片，把文字擠到外面 */
   .event.lead.thumbs-1 .thumb { height: auto; min-height: 0; aspect-ratio: 16 / 9; }
   .ticker-label { width: 34px; }
   .tab-en { display: none; } /* 窄螢幕不放英文小字，免得分頁擠到換行 */
@@ -470,4 +472,19 @@ html.theme-fading *::after {
   .event:hover { transform: none; }
   .ticker-track { animation: none; }
   .ticker-view { overflow-x: auto; }
+}
+
+/* ── 手機版：天氣縮到 70%，放在時鐘右邊，底部仍然對齊下方的橫線（電腦版不受影響） ── */
+@media (max-width: 640px) {
+  .infobar { flex-wrap: nowrap; justify-content: space-between; align-items: flex-end; gap: 8px; }
+  .weather { zoom: 0.7; flex: none; }
+  .geo-btn { position: relative; }
+  .geo-btn::after { content: ""; position: absolute; inset: -9px; } /* 縮小後按鈕只剩約 21px，把可以點的範圍往外加大 */
+}
+@media (max-width: 380px) {
+  .clock-time { height: 28px; }
+  .clock-icon { width: 24px; height: 24px; }
+  .clock-icon svg { width: 22px; height: 22px; }
+  .clock-row { gap: 8px; }
+  .clock-sub { padding-left: 32px; }
 }

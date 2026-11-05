@@ -67,7 +67,7 @@ function initTheme() {
 
   const apply = (t) => {
     root.dataset.theme = t;
-    if (meta) meta.setAttribute("content", t === "dark" ? "#1b2c3b" : "#33495c");
+    if (meta) meta.setAttribute("content", t === "dark" ? "#121416" : "#e9eaea");
     btn.setAttribute("aria-label", t === "dark" ? "切換成亮色背景" : "切換成暗色背景");
   };
 
@@ -422,16 +422,8 @@ function renderMenu() {
     menu.appendChild(det);
   }
 
-  // 按鈕上的橙點：有還沒看過的摘要；目前看的不是最新時，旁邊標出看的是哪一份
+  // 按鈕上的黃點：有還沒看過的摘要（現在看的是哪一期，由上方的期別列顯示）
   $("#time-dot").hidden = !state.index.some((d) => isUnseen(d.generatedAt));
-  const cur = $("#time-cur");
-  if (!isLatest() && state.current) {
-    const g = groupByDay([state.current], Date.now())[0];
-    cur.textContent = g.label + " " + editionName(state.current.generatedAt);
-    cur.hidden = false;
-  } else {
-    cur.hidden = true;
-  }
 }
 
 function openMenu() {
@@ -650,8 +642,10 @@ const getJson = (url) => fetch(url).then((r) => { if (!r.ok) throw new Error(Str
 function select(id) {
   if (state.current && state.current.id === id) return;
   getJson("/api/digest?id=" + encodeURIComponent(id))
-    .then((j) => renderDigest(j.digest))
-    .catch(() => showMsg("這一期太久以前了，已經被清掉囉。"));
+    .then(
+      (j) => { try { renderDigest(j.digest); } catch (err) { console.error(err); } },
+      () => showMsg("這一期太久以前了，已經被清掉囉。"),
+    );
 }
 
 // ── 啟動 ────────────────────────────────────────────
@@ -670,7 +664,8 @@ Promise.all([getJson("/api/latest"), getJson("/api/digests")])
   .then(([latest, idx]) => {
     state.index = idx.digests || [];
     if (!latest.digest) { renderEmpty(); return; }
-    renderDigest(latest.digest);
+    // 畫面畫到一半出錯，只記在 console；不能說成「新聞沒載進來」（資料其實已經拿到了）
+    try { renderDigest(latest.digest); } catch (err) { console.error(err); }
     store.set(KEY.visit, String(Date.now()));
   })
   .catch(() => {

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>看看新聞</title>
 <meta name="description" content="台灣與世界的新聞，定時整理成中立的重點摘要。">
-<meta name="theme-color" content="#1b1d20">
+<meta name="theme-color" content="#e9eaea">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" type="image/png" sizes="292x292" href="/icon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -72,7 +73,6 @@
         <button type="button" role="tab" class="tab" id="tab-world" aria-controls="panel-world" aria-selected="false" tabindex="-1">世界<span class="tab-ic ic-globe" aria-hidden="true"></span><span class="tab-en" aria-hidden="true">WORLD</span></button>
       </div>
       <div class="time-pick" id="time-pick">
-        <span class="time-cur" id="time-cur" hidden></span>
         <button type="button" class="time-btn" id="time-btn" aria-haspopup="true" aria-expanded="false" aria-controls="time-menu" aria-label="選擇時間" title="選擇時間">
           <span class="ic-cal" aria-hidden="true"></span><span class="dot" id="time-dot" hidden></span>
         </button>
@@ -84,7 +84,7 @@
   </main>
 
   <footer>
-    <p>這些新聞是 AI 讀完各家媒體公開的標題與摘要後整理的，難免出錯；想確定就點進原文。類型標籤也是 AI 猜的，不一定準。</p>
+    <p>標題、摘要與標籤是由 AI 讀完各參考新聞來源後所整理，點擊字卡或來源可查看原文。</p>
     <details id="status"><summary>這一期的資料來源狀態</summary><ul id="status-list"></ul></details>
     <p>天氣來自 Open-Meteo，降雨是預報機率。按定位時，約略座標（小數兩位）會送到 Open-Meteo 和 BigDataCloud 查天氣與地名，不會存在這個網站。</p>
   </footer>
