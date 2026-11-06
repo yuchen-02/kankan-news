@@ -8,7 +8,7 @@ export interface Feed {
 }
 
 /** 每家媒體最多取幾篇最新的文章（避免單一來源佔滿，也控制 token 用量） */
-export const PER_SOURCE_CAP: Record<Region, number> = { tw: 30, world: 12 };
+export const PER_SOURCE_CAP: Record<Region, number> = { tw: 12, world: 30 };
 
 /**
  * 來源選擇原則：通訊社與公共媒體優先；國際部分刻意混合不同國家的公共或國際媒體，
@@ -35,6 +35,6 @@ export const FEEDS: Feed[] = [
   { region: "world", name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml" },
   { region: "world", name: "DW", url: "https://rss.dw.com/rdf/rss-en-all" },
   { region: "world", name: "NPR", url: "https://feeds.npr.org/1004/rss.xml" },
-  // region: "world", name: "France 24", url: "https://www.france24.com/en/top-stories/rss" },
+  // France 24 會對 Cloudflare Workers 回 403（網站擋機器人），所以不用。
   { region: "world", name: "中央社（國際）", url: "https://feeds.feedburner.com/rsscna/intworld" },
 ];

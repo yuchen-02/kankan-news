@@ -130,3 +130,26 @@ test("og:image：兩種屬性順序、通用圖與非 http(s) 都處理", () => 
   assert.equal(usableImageUrl("data:image/png;base64,AAAA"), null);
   assert.equal(usableImageUrl(""), null);
 });
+
+test("parseEvents：foreign 只有 true（或 \"true\"）才算，其他一律當作沒有標記", () => {
+  const text = JSON.stringify({
+    events: [
+      { headline: "甲", summary: "s", articleIds: [1], foreign: true },
+      { headline: "乙", summary: "s", articleIds: [1], foreign: "true" },
+      { headline: "丙", summary: "s", articleIds: [1], foreign: false },
+      { headline: "丁", summary: "s", articleIds: [1] },
+      { headline: "戊", summary: "s", articleIds: [1], foreign: "yes" },
+    ],
+  });
+  const out = parseEvents(text, 3);
+  assert.deepEqual(out.map((e) => e.foreign), [true, true, undefined, undefined, undefined]);
+});
+
+test("提示詞：只有台灣那一輪會問 foreign（國外新聞）", async () => {
+  const { buildSystemPrompt } = await import("../src/summarizers/prompt.ts");
+  const base = { articles: [], windowStart: 0, windowEnd: 1, maxEvents: 8 };
+  const tw = buildSystemPrompt({ ...base, region: "tw" });
+  const world = buildSystemPrompt({ ...base, region: "world" });
+  assert.ok(tw.includes("foreign") && tw.includes('"foreign":false'));
+  assert.ok(!world.includes("foreign"));
+});

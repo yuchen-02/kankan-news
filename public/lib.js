@@ -265,12 +265,12 @@ export function parseWeather(j) {
 // [國碼, 比對用的正規表示式]。別名放在同一個國碼底下，所以會用同一個顏色和國旗。
 // 已排除常見的誤判：中國信託／中國時報、韓國瑜、印度洋、南蘇丹、歐洲大陸……
 export const COUNTRIES = [
-  ["tw", "台灣|臺灣"],
-  ["cn", "中國大陸|中國(?!信託|時報|石油|鋼鐵|電視|文化大學)|(?<![洲新])大陸|中共|北京|上海|深圳"],
-  ["hk", "香港"],
+  ["tw", "台灣|臺灣|台股"],
+  ["cn", "中國大陸|中國(?!信託|時報|石油|鋼鐵|電視|文化大學)|(?<![洲新])大陸|中共|北京|上海|深圳|陸股|人民幣"],
+  ["hk", "香港|港股"],
   ["mo", "澳門"],
-  ["us", "美國|華府|華盛頓特區|紐約|洛杉磯|舊金山|白宮"],
-  ["jp", "日本|東京|大阪"],
+  ["us", "美國|華府|華盛頓特區|華盛頓|紐約|洛杉磯|舊金山|白宮|五角大廈|國會山莊|聯準會|華爾街|矽谷|加州|加利福尼亞|德州(?!撲克)|德克薩斯|佛州|佛羅里達|芝加哥|休士頓|西雅圖|波士頓|拉斯維加斯|邁阿密|亞特蘭大|美股|美債|美元|美軍|美方"],
+  ["jp", "日本|東京|大阪|日股|日圓"],
   ["kr", "南韓|韓國(?!瑜)|首爾"],
   ["kp", "北韓|平壤"],
   ["ru", "俄羅斯|俄國|莫斯科|克里姆林宮"],
@@ -333,10 +333,57 @@ export const COUNTRIES = [
   ["br", "巴西(?!利亞)|巴西利亞"],
   ["ar", "阿根廷"],
   ["cl", "智利"],
-  ["co", "哥倫比亞"],
+  ["co", "哥倫比亞(?!大學|特區)"],
   ["ve", "委內瑞拉"],
   ["cu", "古巴"],
   ["pe", "秘魯|祕魯"],
+  ["py", "巴拉圭|亞松森"],
+  ["uy", "烏拉圭"],
+  ["bo", "玻利維亞"],
+  ["ec", "厄瓜多"],
+  ["pa", "巴拿馬"],
+  ["cr", "哥斯大黎加"],
+  ["gt", "瓜地馬拉"],
+  ["hn", "宏都拉斯"],
+  ["ni", "尼加拉瓜"],
+  ["sv", "薩爾瓦多"],
+  ["ht", "海地"],
+  ["jm", "牙買加"],
+  ["do", "多明尼加"],
+  ["kz", "哈薩克"],
+  ["uz", "烏茲別克"],
+  ["mn", "蒙古(?!包)"],
+  ["qa", "卡達"],
+  ["kw", "科威特"],
+  ["jo", "約旦(?!河)"],
+  ["ye", "葉門"],
+  ["om", "阿曼"],
+  ["bh", "巴林"],
+  ["ly", "利比亞"],
+  ["ma", "摩洛哥"],
+  ["dz", "阿爾及利亞"],
+  ["tn", "突尼西亞"],
+  ["gh", "迦納"],
+  ["tz", "坦尚尼亞"],
+  ["ug", "烏干達"],
+  ["so", "索馬利亞"],
+  ["cd", "剛果"],
+  ["ao", "安哥拉"],
+  ["zw", "辛巴威"],
+  ["mz", "莫三比克"],
+  ["cy", "賽普勒斯"],
+  ["ro", "羅馬尼亞"],
+  ["bg", "保加利亞"],
+  ["hr", "克羅埃西亞"],
+  ["sk", "斯洛伐克"],
+  ["si", "斯洛維尼亞"],
+  ["is", "冰島"],
+  ["lt", "立陶宛"],
+  ["lv", "拉脫維亞"],
+  ["ee", "愛沙尼亞"],
+  ["am", "亞美尼亞"],
+  ["az", "亞塞拜然"],
+  ["ge", "喬治亞(?!州)"],
 ].map(([code, src]) => ({ code, re: new RegExp(src, "g") }));
 
 export const COUNTRY_TONES = 12; // style.css 的 --tone-0 … --tone-11
@@ -384,6 +431,19 @@ export function markCountries(headline, skip = []) {
   }
   if (pos < headline.length) parts.push({ text: headline.slice(pos) });
   return { parts, codes };
+}
+
+/**
+ * 一張卡片要標哪些國家：
+ * - 標題裡找得到國家 → 照標題（標題文字上底色、旁邊放國旗）
+ * - 標題一個國家都沒有（連被 skip 的台灣也沒有）→ 改看摘要，只拿第一個出現的國家，只放國旗、標題不上底色
+ * 回傳 { parts, codes, fromSummary }
+ */
+export function cardCountries(headline, summary, skip = []) {
+  const m = markCountries(headline, skip);
+  if (m.codes.length || markCountries(headline).codes.length) return { ...m, fromSummary: false };
+  const fromSummary = markCountries(summary || "", skip).codes.slice(0, 1);
+  return { parts: m.parts, codes: fromSummary, fromSummary: fromSummary.length > 0 };
 }
 
 export function flagUrl(code) {

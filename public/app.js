@@ -13,7 +13,7 @@ import {
   DIGEST_RETENTION_DAYS,
   weatherUrl,
   parseWeather,
-  markCountries,
+  cardCountries,
   dayPart,
   tempLevel,
   humidityLevel,
@@ -450,9 +450,10 @@ function initMenu() {
 
 const MAX_FLAGS = 3;
 
-function renderHeadline(text, region, url) {
+function renderHeadline(text, region, url, summary) {
   // 台灣分頁裡不標記「台灣」（整頁都是台灣，標了只是雜訊）；世界分頁會標
-  const { parts, codes } = markCountries(text, region === "tw" ? ["tw"] : []);
+  // 標題找不到任何國家時，才用摘要補一面國旗（不上底色）
+  const { parts, codes } = cardCountries(text, summary, region === "tw" ? ["tw"] : []);
   const h = el("h3");
   const link = el("a", { class: "card-link", href: safeHref(url), target: "_blank", rel: "noopener noreferrer" });
   if (codes.length) {
@@ -490,26 +491,34 @@ function syncThumbs(art) {
 
 function renderEvent(e, region, i) {
   const art = el("article", { class: "event " + (i === 0 ? "lead" : "compact") });
-  // 圖：頭條卡片最多兩張並排（有兩張不同的圖就都放，免得把一張小圖拉得又寬又糊）；其餘卡片只放第一張。
-  // 直接引用媒體的圖；不送 Referer（避免被防盜連），載入失敗就把那張拿掉
+  const body = el("div", { class: "body" });
+  // 圖：頭條卡片最多兩張並排（有兩張不同的圖就都放，免得把一張小圖拉得又寬又糊）；
+  // 其餘卡片放在內容區左上角的固定大小格子裡，圖依原比例縮進格子、不裁切；沒有圖（或圖載入失敗）就顯示佔位圖，
+  // 所以每張緊湊卡片的版面都一樣，標題與摘要的位置才會對齊。
+  // 直接引用媒體的圖；不送 Referer（避免被防盜連）
   const urls = [];
   const wanted = i === 0 && Array.isArray(e.imageUrls) && e.imageUrls.length > 1 ? e.imageUrls : [e.imageUrl];
   for (const u of wanted) if (u && /^https:\/\//i.test(u) && !urls.includes(u)) urls.push(u);
-  if (urls.length) {
-    const box = i === 0 ? el("div", { class: "thumbs" }) : null;
-    for (const u of urls.slice(0, 2)) {
-      const img = el("img", { class: "thumb", src: u, alt: "", loading: i === 0 ? "eager" : "lazy", decoding: "async", referrerpolicy: "no-referrer" });
-      img.addEventListener("error", () => {
-        img.remove();
-        syncThumbs(art);
-      });
-      (box || art).appendChild(img);
-    }
-    if (box) art.appendChild(box);
-    syncThumbs(art);
+  const lead = i === 0;
+  const box = lead && urls.length ? el("div", { class: "thumbs" }) : null;
+  const slot = lead ? null : el("div", { class: "slot" });
+  for (const u of urls.slice(0, 2)) {
+    const img = el("img", { class: "thumb", src: u, alt: "", loading: lead ? "eager" : "lazy", decoding: "async", referrerpolicy: "no-referrer" });
+    img.addEventListener("error", () => {
+      img.remove();
+      if (slot) slot.classList.add("empty");
+      else syncThumbs(art);
+    });
+    (box || slot).appendChild(img);
+    if (slot) break; // 緊湊卡片只放第一張
   }
-  const body = el("div", { class: "body" });
-  // 第一列：類型字幕條（左）＋編號（右）；舊的摘要沒有類型欄位就只有編號
+  if (slot) {
+    if (!urls.length) slot.classList.add("empty");
+    body.appendChild(slot);
+  }
+  if (box) art.appendChild(box); // 頭條的圖在卡片最上面（內容區之前）
+  // 上半：類型字幕條（左）＋編號（右）＋標題；舊的摘要沒有類型欄位就只有編號
+  const head = el("div", { class: "head" });
   const meta = el("div", { class: "meta" });
   const cats = el("div", { class: "cats", "aria-label": "類型" });
   if (Array.isArray(e.categories)) {
@@ -517,20 +526,25 @@ function renderEvent(e, region, i) {
   }
   meta.appendChild(cats);
   meta.appendChild(el("span", { class: "no", "aria-hidden": "true", text: String(i + 1).padStart(2, "0") }));
-  body.appendChild(meta);
+  head.appendChild(meta);
   // 整張卡片可以點：標題連結（第一個來源）用 ::after 蓋滿整張卡片；下方各來源的連結在它上面，照樣可以單獨點
-  body.appendChild(renderHeadline(e.headline, region, e.sources[0] ? e.sources[0].url : "#"));
-  body.appendChild(el("p", { class: "summary", text: e.summary }));
+  head.appendChild(renderHeadline(e.headline, region, e.sources[0] ? e.sources[0].url : "#", e.summary));
+  // 下半：摘要＋來源
+  const tail = el("div", { class: "tail" });
+  tail.appendChild(el("p", { class: "summary", text: e.summary }));
   if (e.disputed) {
-    body.appendChild(el("p", { class: "disputed" }, [el("b", { text: "各來源說法不同：" }), document.createTextNode(e.disputed)]));
+    tail.appendChild(el("p", { class: "disputed" }, [el("b", { text: "各來源說法不同：" }), document.createTextNode(e.disputed)]));
   }
   const srcs = el("div", { class: "srcs" });
   srcs.appendChild(el("span", { class: "src-label", text: "來源" }));
   for (const s of e.sources) {
     srcs.appendChild(el("a", { href: safeHref(s.url), target: "_blank", rel: "noopener noreferrer", title: s.title, text: s.name }));
   }
-  body.appendChild(srcs);
+  tail.appendChild(srcs);
+  body.appendChild(head);
+  body.appendChild(tail);
   art.appendChild(body);
+  syncThumbs(art);
   return art;
 }
 
@@ -648,6 +662,20 @@ function select(id) {
     );
 }
 
+// ── 訪客次數：每次打開網頁加一；失敗就保持隱藏，不影響其他功能 ──────
+
+function initVisits() {
+  const show = (n) => {
+    if (!Number.isFinite(n) || n < 0) return;
+    for (const b of document.querySelectorAll(".visits-n")) b.textContent = n.toLocaleString("en-US");
+    for (const p of document.querySelectorAll(".visits")) p.hidden = false;
+  };
+  fetch("/api/visit", { method: "POST", keepalive: true })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((j) => show(j.count))
+    .catch(() => {});
+}
+
 // ── 啟動 ────────────────────────────────────────────
 
 initMotion();
@@ -656,6 +684,7 @@ initClock();
 initTabs();
 initMenu();
 initWeather();
+initVisits();
 
 const last = store.get(KEY.visit);
 state.lastVisit = last ? Number(last) : null;

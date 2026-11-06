@@ -1,4 +1,5 @@
 import { runPipeline } from "./pipeline.ts";
+export { VisitCounter } from "./counter.ts";
 import type { Digest, DigestIndexEntry, Env } from "./types.ts";
 
 function json(data: unknown, init: ResponseInit = {}, cacheSeconds = 0): Response {
@@ -21,6 +22,20 @@ function tokenMatches(given: string, expected: string): boolean {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // 訪客計數：每次打開網頁加一（POST）；只接受從本站頁面送出的請求
+    if (url.pathname === "/api/visit" || url.pathname === "/api/visits") {
+      if (!env.COUNTER) return json({ error: "Not found" }, { status: 404 });
+      const stub = env.COUNTER.get(env.COUNTER.idFromName("global"));
+      if (url.pathname === "/api/visits") {
+        return request.method === "GET" ? json({ count: await stub.get() }, {}, 30) : json({ error: "請使用 GET" }, { status: 405 });
+      }
+      if (request.method !== "POST") return json({ error: "請使用 POST" }, { status: 405 });
+      const origin = request.headers.get("origin");
+      if (origin && origin !== url.origin) return json({ error: "Forbidden" }, { status: 403 });
+      const who = request.headers.get("cf-connecting-ip") ?? "unknown";
+      return json({ count: await stub.hit(who) });
+    }
 
     if (url.pathname === "/api/latest" && request.method === "GET") {
       const digest = await env.NEWS.get<Digest>("latest", "json");

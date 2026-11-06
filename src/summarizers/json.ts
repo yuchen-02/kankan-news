@@ -42,7 +42,8 @@ export function parseEvents(text: string, maxId: number): RawEvent[] {
     const disputedRaw = str(e.disputed, 300);
     const disputed = disputedRaw && !/^(null|無|沒有|none)$/i.test(disputedRaw) ? disputedRaw : null;
     const categories = normalizeCategories(e.categories);
-    out.push({ headline, summary, disputed, articleIds, ...(categories.length ? { categories } : {}) });
+    const foreign = e.foreign === true || e.foreign === "true";
+    out.push({ headline, summary, disputed, articleIds, ...(categories.length ? { categories } : {}), ...(foreign ? { foreign } : {}) });
   }
   return out;
 }

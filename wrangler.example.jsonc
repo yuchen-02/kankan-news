@@ -19,6 +19,9 @@
     { "binding": "NEWS", "id": "<你的 KV namespace id>" }
   ],
 
+  "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "VisitCounter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VisitCounter"] }],
+
   // 排程使用 UTC。"0 4,10,23 * * *" = 每天 04:00、10:00、23:00 UTC
   // = 台灣時間 12:00、18:00、隔天 07:00（一天三次：早、中、晚）
   "triggers": { "crons": ["0 4,10,23 * * *"] },

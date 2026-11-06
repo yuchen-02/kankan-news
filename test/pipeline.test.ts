@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runPipeline } from "../src/pipeline.ts";
+import { balanceQuota, moveForeignEvents, quotas, runPipeline } from "../src/pipeline.ts";
 import type { ChosenSummarizer } from "../src/summarizers/index.ts";
 import type { Digest, Env, SummarizeInput } from "../src/types.ts";
 
@@ -242,4 +242,126 @@ test("縮圖：事件引用的不同文章各有圖時，最多留 2 張不重�
   const single = digest.regions.tw.events.find((e) => e.headline === "單圖")!;
   assert.equal(single.imageUrls, undefined);
   assert.ok(single.imageUrl);
+});
+
+// ── 台灣來源裡的國外新聞 ───────────────────────────
+
+const ev = (headline: string, urls: string[]) => ({
+  headline,
+  summary: "s",
+  disputed: null,
+  sources: urls.map((u, i) => ({ name: "S" + i, url: u, title: headline })),
+  sourceCount: urls.length,
+});
+const worldOf = (events: ReturnType<typeof ev>[], extra: object = {}) => ({ events, sources: [], articleCount: 5, ...extra });
+
+test("moveForeignEvents：移到世界頁最後面；同一篇文章（相同網址）已經在世界頁就不重複放", () => {
+  const world = worldOf([ev("A", ["https://x/a"])]);
+  const moved = moveForeignEvents(world, [ev("B", ["https://x/b"]), ev("A2", ["https://x/a", "https://x/z"])], 8);
+  assert.equal(moved, 1);
+  assert.deepEqual(world.events.map((e) => e.headline), ["A", "B"]);
+});
+
+test("moveForeignEvents：世界頁滿了、或世界頁那一輪失敗／沒有文章，就不硬塞", () => {
+  const full = worldOf([ev("A", ["https://x/a"]), ev("B", ["https://x/b"])]);
+  assert.equal(moveForeignEvents(full, [ev("C", ["https://x/c"])], 2), 0);
+  assert.equal(full.events.length, 2);
+  const failed = worldOf([], { error: "boom" });
+  assert.equal(moveForeignEvents(failed, [ev("C", ["https://x/c"])], 8), 0);
+  const empty = worldOf([], { articleCount: 0 });
+  assert.equal(moveForeignEvents(empty, [ev("C", ["https://x/c"])], 8), 0);
+});
+
+test("流程：台灣那一輪標成 foreign 的事件，出現在世界頁、不在台灣頁", async () => {
+  const kv = fakeKV();
+  const env = { NEWS: kv } as unknown as Env;
+  const mk = (title: string, link: string) =>
+    `<item><title>${title}</title><link>${link}</link><description>${title}</description><pubDate>${new Date(NOW.getTime() - 600_000).toUTCString()}</pubDate></item>`;
+  const f = (async (url: string) =>
+    url === "https://tw.test/feed"
+      ? new Response(`<rss><channel>${mk("台灣的事", "https://tw.test/1")}${mk("法國的事", "https://tw.test/2")}</channel></rss>`)
+      : new Response(`<rss><channel>${mk("世界的事", "https://w.test/1")}</channel></rss>`)) as unknown as typeof fetch;
+  const summarizer: ChosenSummarizer = {
+    name: "fake",
+    model: "m",
+    run: async (input) =>
+      input.region === "tw"
+        ? [
+            { headline: "台灣的事", summary: "s", disputed: null, articleIds: [1] },
+            { headline: "法國的事", summary: "s", disputed: null, articleIds: [2], foreign: true },
+          ]
+        : [{ headline: "世界的事", summary: "s", disputed: null, articleIds: [1] }],
+  };
+  const feeds = [
+    { region: "tw" as const, name: "T", url: "https://tw.test/feed" },
+    { region: "world" as const, name: "W", url: "https://w.test/feed" },
+  ];
+  const { digest } = await runPipeline(env, { fetch: f, now: NOW, summarizer, feeds });
+  assert.deepEqual(digest.regions.tw.events.map((e) => e.headline), ["台灣的事"]);
+  assert.deepEqual(digest.regions.world.events.map((e) => e.headline), ["世界的事", "法國的事"]);
+});
+
+const mk = (n: number, tag: string) => Array.from({ length: n }, (_, i) => ev(`${tag}${i}`, [`https://x/${tag}${i}`]));
+
+test("balanceQuota：台灣不滿，名額讓給世界；兩區合計不超過總額", () => {
+  const tw = worldOf(mk(3, "t"));
+  const world = worldOf(mk(12, "w"));
+  balanceQuota(tw, world, [], { tw: 8, world: 8 });
+  assert.equal(tw.events.length, 3);
+  assert.equal(world.events.length, 12);
+});
+
+test("balanceQuota：世界不滿，名額讓給台灣；兩邊都滿就各自 8 則", () => {
+  const tw = worldOf(mk(12, "t"));
+  const world = worldOf(mk(2, "w"));
+  balanceQuota(tw, world, [], { tw: 8, world: 8 });
+  assert.equal(tw.events.length, 12);
+  assert.equal(world.events.length, 2);
+  const a = worldOf(mk(12, "t")), b = worldOf(mk(12, "w"));
+  balanceQuota(a, b, [], { tw: 8, world: 8 });
+  assert.deepEqual([a.events.length, b.events.length], [8, 8]);
+});
+
+test("balanceQuota：國外新聞搬過去也算世界的名額，保留較重要（排前面）的", () => {
+  const tw = worldOf(mk(2, "t"));
+  const world = worldOf(mk(8, "w"));
+  balanceQuota(tw, world, mk(10, "f"), { tw: 8, world: 8 });
+  assert.equal(tw.events.length, 2);
+  assert.equal(world.events.length, 14);
+  assert.equal(world.events[0].headline, "w0");
+});
+
+test("quotas：沒設定用 8，可由環境變數調整", () => {
+  assert.deepEqual(quotas({}), { tw: 8, world: 8, total: 16, ask: 11 });
+  assert.deepEqual(quotas({ MAX_EVENTS_TW: "5", MAX_EVENTS_WORLD: "10" }), { tw: 5, world: 10, total: 15, ask: 11 });
+  assert.equal(quotas({ MAX_EVENTS_ASK: "3" }).ask, 8); // 不低於基本名額
+  assert.equal(quotas({ MAX_EVENTS_ASK: "99" }).ask, 16); // 不超過總額
+});
+
+test("流程：同一篇文章只會出現在一則事件裡", async () => {
+  const summarizer: ChosenSummarizer = {
+    name: "fake", model: "m",
+    run: async (i: SummarizeInput) =>
+      i.region === "tw"
+        ? [
+            { headline: "A", summary: "s", disputed: null, articleIds: [1], categories: [] },
+            { headline: "B", summary: "s", disputed: null, articleIds: [1], categories: [] },
+            { headline: "C", summary: "s", disputed: null, articleIds: [1, 2], categories: [] },
+          ]
+        : [],
+  };
+  const env = { NEWS: fakeKV() } as unknown as Env;
+  const { digest } = await runPipeline(env, { fetch: fakeFetch, now: NOW, summarizer, feeds });
+  const heads = digest.regions.tw.events.map((e) => e.headline);
+  assert.deepEqual(heads, ["A", "C"]);
+  const urls = digest.regions.tw.events.flatMap((e) => e.sources.map((s) => s.url));
+  assert.equal(new Set(urls).size, urls.length);
+});
+
+test("流程：每區向 AI 要的是 MAX_EVENTS_ASK（預設 11），不是兩區總額", async () => {
+  const asked: number[] = [];
+  const summarizer: ChosenSummarizer = { name: "fake", model: "m", run: async (i: SummarizeInput) => { asked.push(i.maxEvents); return []; } };
+  const env = { NEWS: fakeKV() } as unknown as Env;
+  await runPipeline(env, { fetch: fakeFetch, now: NOW, summarizer, feeds });
+  assert.deepEqual(asked, [11, 11]);
 });

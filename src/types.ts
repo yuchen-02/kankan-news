@@ -1,14 +1,20 @@
+import type { VisitCounter } from "./counter.ts";
+
 export type Region = "tw" | "world";
 
 export interface Env {
   AI: Ai;
   NEWS: KVNamespace;
+  /** 訪客計數（Durable Object）。沒綁定時計數功能自動關閉，其他功能不受影響 */
+  COUNTER?: DurableObjectNamespace<VisitCounter>;
   /** "workers-ai"（預設）或 "claude" */
   SUMMARIZER?: string;
   AI_MODEL?: string;
   CLAUDE_MODEL?: string;
   MAX_EVENTS_TW?: string;
   MAX_EVENTS_WORLD?: string;
+  /** 每個區塊向 AI 要幾則（預設 11），影響 Workers AI 額度用量 */
+  MAX_EVENTS_ASK?: string;
   /** secret：只有用 Claude 摘要時才需要 */
   ANTHROPIC_API_KEY?: string;
   /** secret：設定後才會開放 POST /api/refresh（手動觸發） */
@@ -52,6 +58,8 @@ export interface RawEvent {
   articleIds: number[];
   /** 新聞類型標籤（見 categories.ts）；模型沒給或給了無效值時是 undefined */
   categories?: string[];
+  /** 只有「台灣」那一輪會問：true＝事件發生在國外、台灣只是附帶（流程會把它移到「世界」頁）。其他情況是 undefined */
+  foreign?: boolean;
 }
 
 /** 可替換的摘要函式：輸入文章，輸出事件。要換模型只要實作這個型別。 */

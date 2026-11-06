@@ -55,7 +55,7 @@ export function workersAiSummarizer(env: Env): { model: string; run: Summarizer 
               { role: "user", content: user + retryNote },
             ],
             // Workers AI 預設 max_tokens 很小（256），一定要明確設定
-            max_tokens: 3000,
+            max_tokens: Math.min(6000, 600 + 230 * input.maxEvents),
             temperature: 0.2,
           }),
           150_000,

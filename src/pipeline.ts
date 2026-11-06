@@ -138,6 +138,8 @@ async function collectRegion(region: Region, since: number, until: number, deps:
 
 interface EventWithArticles {
   event: DigestEvent;
+  /** 模型標記這則是國外新聞（只有台灣那一輪會有） */
+  foreign?: boolean;
   /** 這個事件引用的文章（依模型給的順序，已去掉不存在的編號） */
   articles: Article[];
 }
@@ -145,13 +147,16 @@ interface EventWithArticles {
 function toEvents(raw: Awaited<ReturnType<ChosenSummarizer["run"]>>, articles: Article[]): EventWithArticles[] {
   const byId = new Map(articles.map((a) => [a.id, a]));
   const events: EventWithArticles[] = [];
+  // 一篇文章只能歸在一則事件底下（排序在前、較重要的那則優先），避免同一篇報導在頁面上出現多張字卡
+  const claimed = new Set<number>();
   for (const e of raw) {
     const seen = new Set<string>();
     const sources: SourceLink[] = [];
     const used: Article[] = [];
     for (const id of e.articleIds) {
       const a = byId.get(id);
-      if (!a) continue;
+      if (!a || claimed.has(a.id)) continue;
+      claimed.add(a.id);
       used.push(a);
       if (seen.has(a.source)) continue;
       seen.add(a.source);
@@ -169,6 +174,7 @@ function toEvents(raw: Awaited<ReturnType<ChosenSummarizer["run"]>>, articles: A
         ...(e.categories?.length ? { categories: e.categories } : {}),
       },
       articles: used,
+      ...(e.foreign ? { foreign: true } : {}),
     });
   }
   return events;
@@ -213,21 +219,69 @@ async function buildRegion(
   deps: Required<Pick<Deps, "fetch" | "feeds">>,
   summarizer: ChosenSummarizer,
   ogBudget: { left: number },
-): Promise<RegionDigest> {
+): Promise<{ digest: RegionDigest; foreign: DigestEvent[] }> {
   const { articles, sources } = await collectRegion(region, since, until, deps);
   const base: RegionDigest = { events: [], sources, articleCount: articles.length };
-  if (articles.length === 0) return base;
+  const foreign: DigestEvent[] = [];
+  if (articles.length === 0) return { digest: base, foreign };
 
-  const maxEvents = Number((region === "tw" ? env.MAX_EVENTS_TW : env.MAX_EVENTS_WORLD) ?? 8) || 8;
+  // 每區向 AI 要的數量比基本名額多一些（讓另一區不足時有東西可補），之後再由 balanceQuota 依實際數量分配
+  const { ask: maxEvents } = quotas(env);
   try {
     const raw = await summarizer.run({ region, articles, windowStart: since, windowEnd: until, maxEvents });
     const chosen = toEvents(raw, articles).slice(0, maxEvents);
     await attachImages(chosen, deps.fetch, ogBudget);
-    base.events = chosen.map((c) => c.event);
+    // 台灣那一輪裡被標成「國外新聞」的，不放在台灣頁（交給 moveForeignEvents 處理）
+    base.events = chosen.filter((c) => !c.foreign).map((c) => c.event);
+    foreign.push(...chosen.filter((c) => c.foreign).map((c) => c.event));
   } catch (e) {
     base.error = (e instanceof Error ? e.message : String(e)).slice(0, 200);
   }
-  return base;
+  return { digest: base, foreign };
+}
+
+/**
+ * 台灣的來源（例如中央社的政治、社會、財經分類）也會報國外新聞，
+ * 光看來源分不出來，所以由模型依內容標記「國外新聞」，這裡把它們移到世界頁：
+ * - 世界頁已經有引用同一篇文章（相同網址）的事件 → 視為重複，直接丟掉
+ * - 世界頁已經滿了（達到上限），或世界頁那一輪失敗／沒有文章 → 丟掉，不硬塞
+ * 移過去的放在最後面（世界頁原本的排序是依重要性，不去打亂它）。
+ */
+export function moveForeignEvents(world: RegionDigest, foreign: DigestEvent[], maxWorld: number): number {
+  if (world.error || world.articleCount === 0) return 0;
+  const urls = new Set(world.events.flatMap((e) => e.sources.map((s) => s.url)));
+  let moved = 0;
+  for (const e of foreign) {
+    if (world.events.length >= maxWorld) break;
+    if (e.sources.some((s) => urls.has(s.url))) continue;
+    world.events.push(e);
+    e.sources.forEach((s) => urls.add(s.url));
+    moved++;
+  }
+  return moved;
+}
+
+/** 每區塊的基本名額與兩區總額 */
+export function quotas(env: Pick<Env, "MAX_EVENTS_TW" | "MAX_EVENTS_WORLD" | "MAX_EVENTS_ASK">): { tw: number; world: number; total: number; ask: number } {
+  const tw = Number(env.MAX_EVENTS_TW ?? 8) || 8;
+  const world = Number(env.MAX_EVENTS_WORLD ?? 8) || 8;
+  const total = tw + world;
+  // 每一區向 AI 要幾則（輸出越多越耗 Workers AI 額度）。不能比基本名額少，也沒必要比總額多
+  const ask = Math.min(total, Math.max(Math.max(tw, world), Number(env.MAX_EVENTS_ASK ?? 11) || 11));
+  return { tw, world, total, ask };
+}
+
+/**
+ * 名額共用：一邊沒用完的名額讓給另一邊，兩區合計不超過 tw + world。
+ * 事件本來就是依重要性排序，所以截掉的是排在最後的。
+ * 先處理國外新聞搬移（它也要佔世界頁名額），再截斷兩邊。
+ */
+export function balanceQuota(tw: RegionDigest, world: RegionDigest, foreign: DigestEvent[], q: { tw: number; world: number }): void {
+  const spareTw = Math.max(0, q.tw - tw.events.length);
+  moveForeignEvents(world, foreign, q.world + spareTw);
+  const spareWorld = Math.max(0, q.world - world.events.length);
+  tw.events = tw.events.slice(0, q.tw + spareWorld);
+  world.events = world.events.slice(0, q.world + spareTw);
 }
 
 // ── 主流程 ───────────────────────────────────────────
@@ -246,10 +300,13 @@ export async function runPipeline(env: Env, deps: Deps = {}): Promise<RunResult>
     : until - DEFAULT_WINDOW_HOURS * HOUR;
 
   const ogBudget = { left: OG_FETCH_BUDGET };
-  const [tw, world] = await Promise.all([
+  const [twRun, worldRun] = await Promise.all([
     buildRegion("tw", since, until, env, { fetch: f, feeds }, summarizer, ogBudget),
     buildRegion("world", since, until, env, { fetch: f, feeds }, summarizer, ogBudget),
   ]);
+  const tw = twRun.digest;
+  const world = worldRun.digest;
+  balanceQuota(tw, world, twRun.foreign, quotas(env));
 
   // 兩個區塊都失敗就不要覆蓋掉上一份還能用的摘要
   if (tw.error && world.error) {

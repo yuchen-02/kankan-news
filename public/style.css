@@ -172,6 +172,13 @@ a { color: inherit; }
 .clock-date { color: var(--muted); font-size: 0.95rem; letter-spacing: 0.04em; }
 .clock-note { color: var(--muted); font-size: 0.8rem; }
 
+/* 訪客次數：電腦版放在時鐘和天氣中間的空白處（靠下，和時鐘底部對齊）；手機版改放在時鐘下面 */
+.visits { margin: 0; color: var(--muted); font-size: 0.88rem; letter-spacing: 0.04em; }
+.visits[hidden] { display: none; }
+.visits b { margin: 0 0.4em; color: var(--ink); font: 700 1.15rem/1 var(--num); letter-spacing: 0.04em; }
+.visits-mid { flex: 1; min-width: 0; align-self: flex-end; text-align: center; padding-bottom: 14px; }
+.visits-in-clock { display: none; }
+
 /* 天氣：四行，由上到下（地區、溫度、濕度、降雨），最後一行貼著下面的橫線 */
 .weather { display: flex; flex-direction: column; gap: 3px; padding-bottom: 5px; font-size: 0.92rem; min-width: 0; }
 .weather .muted, .weather .w-msg { color: var(--muted); }
@@ -321,12 +328,15 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 :root[data-theme="dark"] .events { filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55)); }
 .event {
   --cut: 16px; position: relative; cursor: pointer; min-width: 0;
+  display: flex; flex-direction: column; /* 同一列的卡片會被拉成一樣高，內容區要跟著撐滿，黃條才會從上到下 */
   background: var(--card);
   clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
 }
 .event::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; border: 2px solid transparent; }
 .event:has(.card-link:focus-visible)::before { border-color: var(--accent); }
-.body { position: relative; padding: 14px 18px 16px 22px; box-shadow: inset 4px 0 0 var(--signal); min-width: 0; }
+.body { position: relative; flex: 1 1 auto; display: flex; flex-direction: column; padding: 14px 18px 16px 22px; box-shadow: inset 4px 0 0 var(--signal); min-width: 0; }
+.tail { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+.tail > .srcs { margin-top: auto; padding-top: 12px; } /* 卡片比較高時，來源貼在最下面 */
 .event h3 { margin: 0 0 8px; font: 700 1.05rem/1.5 var(--sans); }
 .event h3 .ht { min-width: 0; }
 .summary { margin: 0; font-size: 0.95rem; }
@@ -349,8 +359,24 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 .events > .event.compact:last-child:nth-child(even) { grid-column: 1 / -1; }
 
 /* 緊湊卡片：有縮圖時，縮圖在左邊貼齊卡片 */
-.event.compact.has-thumb { display: grid; grid-template-columns: 112px minmax(0, 1fr); }
-.event.compact.has-thumb .thumb { height: 100%; min-height: 128px; }
+/* 緊湊卡片：內容分成四塊——左上＝固定大小的圖格、右上＝類型標籤＋標題、下半（跨整列）＝摘要＋來源。
+   圖依原比例縮進格子、不裁切（比例不合的地方露出格子底色）；沒有圖時是佔位圖。
+   上排高度固定（--slot-h），所以同一列的卡片，摘要一定從同樣的高度開始 */
+.event.compact { --slot-w: 168px; --slot-h: 112px; }
+.event.compact .body { display: grid; grid-template-columns: var(--slot-w) minmax(0, 1fr); grid-template-rows: var(--slot-h) 1fr; column-gap: 14px; row-gap: 12px; align-items: start; }
+.slot { grid-column: 1; grid-row: 1; position: relative; width: var(--slot-w); height: var(--slot-h); overflow: hidden; background: var(--rule); }
+.slot .thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: transparent; }
+.slot.empty {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rule) 70%, transparent) 0 7px, transparent 7px 14px), var(--card);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.slot.empty::after {
+  content: "KANKAN\A NEWS"; white-space: pre; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+  font: 700 0.95rem/1.2 var(--num); letter-spacing: 0.2em; color: var(--muted); opacity: 0.7;
+}
+.event.compact .head { grid-column: 2; grid-row: 1; min-width: 0; height: var(--slot-h); overflow: hidden; }
+.event.compact .head .ht { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; } /* 標題最多三行，才放得進上排的固定高度 */
+.event.compact .tail { grid-column: 1 / -1; grid-row: 2; align-self: stretch; }
 
 /* 第一列：類型字幕條（左）＋編號（右） */
 .meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
@@ -399,11 +425,14 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 
 @media (max-width: 640px) {
   .events { grid-template-columns: minmax(0, 1fr); }
-  .event.compact.has-thumb { grid-template-columns: 96px minmax(0, 1fr); }
   .event.lead.thumbs-1 { display: block; }
   .event.lead.thumbs-1 .thumbs { height: auto; } /* 手機上圖在文字上面；height:100% 會讓圖片區塊撐滿整張卡片，把文字擠到外面 */
   .event.lead.thumbs-1 .thumb { height: auto; min-height: 0; aspect-ratio: 16 / 9; }
   .ticker-label { width: 34px; }
+  .event.compact { --slot-w: 120px; }
+  .event.compact .body { grid-template-rows: auto 1fr; }
+  .event.compact .head { height: auto; min-height: var(--slot-h); overflow: visible; }
+  .event.compact .head .ht { display: block; -webkit-line-clamp: unset; overflow: visible; }
   .tab-en { display: none; } /* 窄螢幕不放英文小字，免得分頁擠到換行 */
   .tab { padding: 12px 26px 12px 18px; white-space: nowrap; }
 }
@@ -476,6 +505,9 @@ html.theme-fading *::after {
 
 /* ── 手機版：天氣縮到 70%，放在時鐘右邊，底部仍然對齊下方的橫線（電腦版不受影響） ── */
 @media (max-width: 640px) {
+  .visits-mid { display: none; }
+  .visits-in-clock:not([hidden]) { display: block; padding-left: 42px; font-size: 0.8rem; }
+  .visits-in-clock b { font-size: 1rem; margin: 0 0.3em; }
   .infobar { flex-wrap: nowrap; justify-content: space-between; align-items: flex-end; gap: 8px; }
   .weather { zoom: 0.7; flex: none; }
   .geo-btn { position: relative; }
@@ -486,5 +518,5 @@ html.theme-fading *::after {
   .clock-icon { width: 24px; height: 24px; }
   .clock-icon svg { width: 22px; height: 22px; }
   .clock-row { gap: 8px; }
-  .clock-sub { padding-left: 32px; }
+  .clock-sub, .visits-in-clock:not([hidden]) { padding-left: 32px; }
 }

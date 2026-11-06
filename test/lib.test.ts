@@ -172,7 +172,7 @@ test("markCountries：只寫城市也要標出國家（同一則新聞不同次�
   assert.deepEqual(lib.markCountries("德里空氣質量惡化").codes, ["in"]);
   assert.deepEqual(lib.markCountries("印度德里空氣質量惡化").codes, ["in"]);
   assert.deepEqual(lib.markCountries("莫斯科與基輔互相指控").codes, ["ru", "ua"]);
-  assert.deepEqual(lib.markCountries("羅馬尼亞選舉").codes, []);
+  assert.deepEqual(lib.markCountries("羅馬尼亞選舉").codes, ["ro"]); // 是羅馬尼亞，不是義大利的羅馬
 });
 
 test("markCountries：skip 可略過台灣（台灣分頁用）", () => {
@@ -196,4 +196,47 @@ test("toneOf：每個國碼都落在 0 到 11", () => {
     const t = lib.toneOf(code);
     assert.ok(Number.isInteger(t) && t >= 0 && t < lib.COUNTRY_TONES, code);
   }
+});
+
+test("markCountries：補上的國家、美國的州與城市、美股等金融用語", () => {
+  const codes = (t: string) => lib.markCountries(t).codes;
+  assert.deepEqual(codes("巴拉圭新總統就職"), ["py"]);
+  assert.deepEqual(codes("加州野火延燒"), ["us"]);
+  assert.deepEqual(codes("美股重挫 費半跌逾3%"), ["us"]);
+  assert.deepEqual(codes("華爾街預期聯準會降息"), ["us"]);
+  assert.deepEqual(codes("日股收盤創新高"), ["jp"]);
+  assert.deepEqual(codes("台股跌破4萬點"), ["tw"]);
+  assert.deepEqual(lib.markCountries("台股跌破4萬點", ["tw"]).codes, []); // 台灣分頁不標台灣
+});
+
+test("markCountries：容易誤判的詞不標", () => {
+  const codes = (t: string) => lib.markCountries(t).codes;
+  assert.deepEqual(codes("美光桃園工會質疑協議效力"), []); // 美光是公司
+  assert.deepEqual(codes("約旦河西岸衝突"), []); // 河西岸不是約旦國
+  assert.deepEqual(codes("喬治亞州選務爭議"), []); // 是美國的州，不是喬治亞國
+  assert.deepEqual(codes("德州撲克世界賽"), []);
+  assert.deepEqual(codes("哥倫比亞大學學生抗議"), []);
+});
+
+test("cardCountries：標題有國家就照標題；標題一個國家都沒有，才用摘要裡第一個出現的國家補國旗（不標底色）", () => {
+  const a = lib.cardCountries("美國期中選舉結果", "民主黨取得眾議院過半", []);
+  assert.deepEqual(a.codes, ["us"]);
+  assert.equal(a.fromSummary, false);
+
+  const b = lib.cardCountries("野火延燒", "美國東部沿岸出現大火，日本也派員協助", []);
+  assert.deepEqual(b.codes, ["us"]); // 只補第一個
+  assert.equal(b.fromSummary, true);
+  assert.ok(b.parts.every((p: { code?: string }) => !p.code)); // 標題文字不上底色
+
+  const c = lib.cardCountries("野火延燒", "當地消防單位表示已控制火勢", []);
+  assert.deepEqual(c.codes, []);
+  assert.equal(c.fromSummary, false);
+});
+
+test("cardCountries：台灣分頁裡標題提到台灣（雖然不標）也算標題有國家，不再去摘要補", () => {
+  const r = lib.cardCountries("台灣出口創新高", "主要客戶為美國與中國", ["tw"]);
+  assert.deepEqual(r.codes, []);
+  assert.equal(r.fromSummary, false);
+  const r2 = lib.cardCountries("工會質疑協議效力", "美光在桃園的工廠與日本供應商", ["tw"]);
+  assert.deepEqual(r2.codes, ["jp"]); // 台灣分頁摘要裡的台灣不補；「美光」不是國家
 });
