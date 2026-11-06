@@ -33,6 +33,8 @@ export interface Deps {
    * 預設 true（排程用）。
    */
   persist?: boolean;
+  /** 補救模式：用這份（有區塊失敗的）摘要的 id、產生時間和時間範圍重新做一次，不影響排程的時間軸 */
+  repair?: Digest;
 }
 
 export interface RunResult {
@@ -286,18 +288,41 @@ export function balanceQuota(tw: RegionDigest, world: RegionDigest, foreign: Dig
 
 // ── 主流程 ───────────────────────────────────────────
 
+async function storeDigest(env: Env, digest: Digest, replace: boolean): Promise<void> {
+  await env.NEWS.put(`digest:${digest.id}`, JSON.stringify(digest), { expirationTtl: DIGEST_TTL_SECONDS });
+  // 補救時，只有它還是「最新一份」才更新 latest，避免把更新的摘要蓋掉
+  const cur = await env.NEWS.get<Digest>("latest", "json");
+  if (!replace || cur?.id === digest.id) await env.NEWS.put("latest", JSON.stringify(digest));
+
+  const index = (await env.NEWS.get<DigestIndexEntry[]>("index", "json")) ?? [];
+  const entry: DigestIndexEntry = {
+    id: digest.id,
+    generatedAt: digest.generatedAt,
+    windowStart: digest.windowStart,
+    windowEnd: digest.windowEnd,
+    counts: { tw: digest.regions.tw.events.length, world: digest.regions.world.events.length },
+  };
+  // 補救：原地換掉那一筆，順序不變；一般：放到最前面
+  const next = replace && index.some((e) => e.id === entry.id) ? index.map((e) => (e.id === entry.id ? entry : e)) : [entry, ...index.filter((e) => e.id !== entry.id)];
+  await env.NEWS.put("index", JSON.stringify(next.slice(0, KEEP_INDEX)));
+}
+
 export async function runPipeline(env: Env, deps: Deps = {}): Promise<RunResult> {
   const f = deps.fetch ?? fetch;
   const feeds = deps.feeds ?? FEEDS;
-  const now = deps.now ?? new Date();
+  const rep = deps.repair;
+  const now = rep ? new Date(rep.generatedAt) : (deps.now ?? new Date());
   const summarizer = deps.summarizer ?? pickSummarizer(env);
 
   // 時間範圍：從上一份摘要的產生時間開始（略微重疊避免漏掉），最長回溯 24 小時
-  const previous = await env.NEWS.get<Digest>("latest", "json");
-  const until = now.getTime();
-  const since = previous
-    ? Math.max(Date.parse(previous.generatedAt) - OVERLAP_MS, until - MAX_WINDOW_HOURS * HOUR)
-    : until - DEFAULT_WINDOW_HOURS * HOUR;
+  // 補救模式則沿用原本那份的時間範圍
+  const previous = rep ? null : await env.NEWS.get<Digest>("latest", "json");
+  const until = rep ? Date.parse(rep.windowEnd) : now.getTime();
+  const since = rep
+    ? Date.parse(rep.windowStart)
+    : previous
+      ? Math.max(Date.parse(previous.generatedAt) - OVERLAP_MS, until - MAX_WINDOW_HOURS * HOUR)
+      : until - DEFAULT_WINDOW_HOURS * HOUR;
 
   const ogBudget = { left: OG_FETCH_BUDGET };
   const [twRun, worldRun] = await Promise.all([
@@ -314,30 +339,70 @@ export async function runPipeline(env: Env, deps: Deps = {}): Promise<RunResult>
   }
 
   const digest: Digest = {
-    id: digestId(now),
+    id: rep ? rep.id : digestId(now),
     generatedAt: now.toISOString(),
     windowStart: new Date(since).toISOString(),
-    windowEnd: now.toISOString(),
+    windowEnd: new Date(until).toISOString(),
     summarizer: summarizer.name,
     model: summarizer.model,
     regions: { tw, world },
   };
 
   // 預覽模式：已經有摘要時不寫入任何東西
-  if (deps.persist === false && previous) return { digest, stored: false };
+  if (deps.persist === false && (previous || rep)) return { digest, stored: false };
 
-  await env.NEWS.put(`digest:${digest.id}`, JSON.stringify(digest), { expirationTtl: DIGEST_TTL_SECONDS });
-  await env.NEWS.put("latest", JSON.stringify(digest));
-
-  const index = (await env.NEWS.get<DigestIndexEntry[]>("index", "json")) ?? [];
-  const entry: DigestIndexEntry = {
-    id: digest.id,
-    generatedAt: digest.generatedAt,
-    windowStart: digest.windowStart,
-    windowEnd: digest.windowEnd,
-    counts: { tw: tw.events.length, world: world.events.length },
-  };
-  await env.NEWS.put("index", JSON.stringify([entry, ...index.filter((e) => e.id !== entry.id)].slice(0, KEEP_INDEX)));
-
+  await storeDigest(env, digest, false);
   return { digest, stored: true };
+}
+
+const failedCount = (d: Digest) => (d.regions.tw.error ? 1 : 0) + (d.regions.world.error ? 1 : 0);
+const REPAIR_MAX_AGE_MS = 3 * HOUR;
+
+export interface RepairResult {
+  repaired: boolean;
+  reason: string;
+}
+
+/**
+ * 最新一份摘要有區塊整理失敗時，用同一個時間範圍重做一次，成功就原地換掉（同一個 id，頁面上位置不變）。
+ * 只有「變得更好」（失敗的區塊變少）才會寫入；否則保留原樣，等下一次補救。
+ * 預設只補救 3 小時內的摘要（force 可略過），避免排程永遠重試很舊的資料。
+ */
+export async function repairLatest(env: Env, deps: Deps & { force?: boolean } = {}): Promise<RepairResult> {
+  const latest = await env.NEWS.get<Digest>("latest", "json");
+  if (!latest) return { repaired: false, reason: "還沒有摘要" };
+  if (failedCount(latest) === 0) return { repaired: false, reason: "最新一份沒有失敗的區塊" };
+  const now = (deps.now ?? new Date()).getTime();
+  if (!deps.force && now - Date.parse(latest.generatedAt) > REPAIR_MAX_AGE_MS) return { repaired: false, reason: "這份摘要已經超過 3 小時，不再補救" };
+
+  let result: RunResult;
+  try {
+    result = await runPipeline(env, { ...deps, repair: latest, persist: false });
+  } catch (e) {
+    return { repaired: false, reason: `補救失敗：${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (failedCount(result.digest) >= failedCount(latest)) return { repaired: false, reason: "重做後仍然失敗，保留原樣" };
+  await storeDigest(env, result.digest, true);
+  return { repaired: true, reason: failedCount(result.digest) === 0 ? "已補救成功" : "已補救一個區塊，另一個仍失敗" };
+}
+
+/**
+ * 排程每次被叫醒時要做的事。整點（分鐘 = 0）是正式整理；整點之後的補救時段（例如 :20、:50）：
+ * - 這個整點的摘要根本沒產生（整理時兩個區塊都失敗）→ 整個重做
+ * - 有區塊失敗 → 補救那一份
+ * - 都正常 → 什麼都不做（只讀一次 KV）
+ */
+export async function runScheduled(env: Env, scheduledTime: number, deps: Deps = {}): Promise<string> {
+  if (new Date(scheduledTime).getUTCMinutes() === 0) {
+    const { digest: d } = await runPipeline(env, deps);
+    return `digest ${d.id}: tw=${d.regions.tw.events.length} world=${d.regions.world.events.length}`;
+  }
+  const latest = await env.NEWS.get<Digest>("latest", "json");
+  const slotStart = scheduledTime - (scheduledTime % HOUR);
+  if (!latest || Date.parse(latest.generatedAt) < slotStart) {
+    const { digest: d } = await runPipeline(env, deps);
+    return `retry digest ${d.id}: tw=${d.regions.tw.events.length} world=${d.regions.world.events.length}`;
+  }
+  const r = await repairLatest(env, deps);
+  return `repair: ${r.reason}`;
 }

@@ -153,3 +153,22 @@ test("提示詞：只有台灣那一輪會問 foreign（國外新聞）", async 
   assert.ok(tw.includes("foreign") && tw.includes('"foreign":false'));
   assert.ok(!world.includes("foreign"));
 });
+
+test("parseEvents：容忍多餘的逗號（Llama 常見的錯誤）", () => {
+  const bad = '{"events":[{"headline":"甲","summary":"乙","articleIds":[1,2],"categories":["政治","選舉"]}, ]}';
+  assert.equal(parseEvents(bad, 5).length, 1);
+  const bad2 = '{"events":[{"headline":"甲, ]","summary":"乙","articleIds":[1,],},]}';
+  const r = parseEvents(bad2, 5);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].headline, "甲, ]"); // 字串裡的逗號與括號不會被動到
+});
+
+test("parseEvents：輸出被截斷時保留已經完整的事件", () => {
+  const cut = '{"events":[{"headline":"甲","summary":"乙","articleIds":[1]},{"headline":"丙","summary":"丁","articleIds":[2]},{"headline":"戊","summary":"己","artic';
+  const r = parseEvents(cut, 5);
+  assert.deepEqual(r.map((e) => e.headline), ["甲", "丙"]);
+});
+
+test("parseEvents：完全不是 JSON 時還是會丟錯", () => {
+  assert.throws(() => parseEvents("抱歉，我做不到", 5));
+});

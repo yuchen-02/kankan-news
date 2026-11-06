@@ -1,4 +1,4 @@
-import { runPipeline } from "./pipeline.ts";
+import { repairLatest, runPipeline, runScheduled } from "./pipeline.ts";
 export { VisitCounter } from "./counter.ts";
 import type { Digest, DigestIndexEntry, Env } from "./types.ts";
 
@@ -60,6 +60,14 @@ export default {
       if (request.method !== "POST") return json({ error: "請使用 POST" }, { status: 405 });
       const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
       if (!tokenMatches(given, env.REFRESH_TOKEN)) return json({ error: "Unauthorized" }, { status: 401 });
+      // POST /api/refresh?repair=1：立刻補救最新一份有失敗區塊的摘要（不受 3 小時限制）
+      if (url.searchParams.get("repair") === "1") {
+        try {
+          return json({ ok: true, ...(await repairLatest(env, { force: true })) });
+        } catch (e) {
+          return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+        }
+      }
       try {
         // 手動觸發只預覽，不改變排程的時間軸；KV 還是空的時候才會儲存
         const { digest, stored } = await runPipeline(env, { persist: false });
@@ -84,10 +92,10 @@ export default {
     return json({ error: "Not found" }, { status: 404 });
   },
 
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      runPipeline(env).then(
-        ({ digest: d }) => console.log(`digest ${d.id}: tw=${d.regions.tw.events.length} world=${d.regions.world.events.length}`),
+      runScheduled(env, event.scheduledTime).then(
+        (msg) => console.log(msg),
         (e) => {
           console.error("digest failed:", e instanceof Error ? e.message : e);
           throw e;

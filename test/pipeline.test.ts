@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { balanceQuota, moveForeignEvents, quotas, runPipeline } from "../src/pipeline.ts";
+import { balanceQuota, moveForeignEvents, quotas, repairLatest, runPipeline, runScheduled } from "../src/pipeline.ts";
 import type { ChosenSummarizer } from "../src/summarizers/index.ts";
 import type { Digest, Env, SummarizeInput } from "../src/types.ts";
 
@@ -364,4 +364,52 @@ test("流程：每區向 AI 要的是 MAX_EVENTS_ASK（預設 11），不是兩�
   const env = { NEWS: fakeKV() } as unknown as Env;
   await runPipeline(env, { fetch: fakeFetch, now: NOW, summarizer, feeds });
   assert.deepEqual(asked, [11, 11]);
+});
+
+// ── 補救：有區塊失敗時重做，成功就原地換掉 ──
+const okEvent = [{ headline: "好", summary: "s", disputed: null, articleIds: [1], categories: [] }];
+const sumWorldFails: ChosenSummarizer = { name: "fake", model: "m", run: async (i: SummarizeInput) => { if (i.region === "world") throw new Error("Unexpected token ]"); return okEvent; } };
+const sumAllOk: ChosenSummarizer = { name: "fake", model: "m", run: async () => okEvent };
+
+test("repairLatest：世界失敗後補救成功，同一個 id、原地換掉", async () => {
+  const env = { NEWS: fakeKV() } as unknown as Env;
+  const first = await runPipeline(env, { fetch: fakeFetch, now: NOW, summarizer: sumWorldFails, feeds });
+  assert.ok(first.digest.regions.world.error);
+  const r = await repairLatest(env, { fetch: fakeFetch, now: new Date(NOW.getTime() + 20 * 60_000), summarizer: sumAllOk, feeds });
+  assert.equal(r.repaired, true);
+  const latest = (await env.NEWS.get("latest", "json")) as any;
+  assert.equal(latest.id, first.digest.id);
+  assert.equal(latest.regions.world.error, undefined);
+  assert.ok(latest.regions.world.events.length > 0);
+  const index = (await env.NEWS.get("index", "json")) as any[];
+  assert.equal(index.length, 1);
+  assert.ok(index[0].counts.world > 0);
+});
+
+test("repairLatest：重做仍失敗就保留原樣；沒失敗或太舊就不動", async () => {
+  const env = { NEWS: fakeKV() } as unknown as Env;
+  await runPipeline(env, { fetch: fakeFetch, now: NOW, summarizer: sumWorldFails, feeds });
+  const again = await repairLatest(env, { fetch: fakeFetch, now: new Date(NOW.getTime() + 60_000), summarizer: sumWorldFails, feeds });
+  assert.equal(again.repaired, false);
+  const old = await repairLatest(env, { fetch: fakeFetch, now: new Date(NOW.getTime() + 4 * 3600_000), summarizer: sumAllOk, feeds });
+  assert.equal(old.repaired, false);
+  assert.match(old.reason, /3 小時/);
+  const forced = await repairLatest(env, { fetch: fakeFetch, now: new Date(NOW.getTime() + 4 * 3600_000), summarizer: sumAllOk, feeds, force: true });
+  assert.equal(forced.repaired, true);
+  const healthy = await repairLatest(env, { fetch: fakeFetch, now: NOW, summarizer: sumAllOk, feeds });
+  assert.equal(healthy.repaired, false);
+});
+
+test("runScheduled：整點正式整理；補救時段依狀況重做、補救或略過", async () => {
+  const env = { NEWS: fakeKV() } as unknown as Env;
+  const hour = Math.floor(NOW.getTime() / 3600_000) * 3600_000;
+  const deps = { fetch: fakeFetch, now: NOW, summarizer: sumWorldFails, feeds };
+  assert.match(await runScheduled(env, hour, deps), /^digest /);
+  // :20 這個整點的摘要有世界失敗 → 補救
+  assert.match(await runScheduled(env, hour + 20 * 60_000, { ...deps, summarizer: sumAllOk }), /已補救成功/);
+  // :50 已經正常 → 略過
+  assert.match(await runScheduled(env, hour + 50 * 60_000, { ...deps, summarizer: sumAllOk }), /沒有失敗/);
+  // 另一個整點完全沒有摘要（整點整理時兩區都失敗）→ :20 整個重做
+  const next = hour + 6 * 3600_000;
+  assert.match(await runScheduled(env, next + 20 * 60_000, { ...deps, now: new Date(next + 20 * 60_000), summarizer: sumAllOk }), /^retry digest /);
 });

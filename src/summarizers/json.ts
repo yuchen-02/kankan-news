@@ -1,14 +1,77 @@
 import { normalizeCategories } from "../categories.ts";
 import type { RawEvent } from "../types.ts";
 
-/** 從模型輸出中找出 JSON 物件（容忍 ```json 圍欄、前後多餘文字） */
+/** 移除 ] 或 } 前面多餘的逗號（小模型常見的錯誤），字串裡面的逗號不會動 */
+export function removeTrailingCommas(s: string): string {
+  let out = "";
+  let inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      out += c;
+      if (c === "\\") out += s[++i] ?? "";
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; out += c; continue; }
+    if (c === ",") {
+      let j = i + 1;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      if (s[j] === "]" || s[j] === "}") continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/** 輸出被截斷時，砍到最後一個完整的事件，補上結尾；找不到就回傳 null */
+export function salvageTruncated(s: string): string | null {
+  let depth = 0;
+  let inStr = false;
+  let lastEnd = -1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{" || c === "[") depth++;
+    else if (c === "}" || c === "]") {
+      depth--;
+      if (c === "}" && depth === 2) lastEnd = i; // 根物件 { events: [ 事件物件 } 
+    }
+  }
+  return lastEnd === -1 ? null : s.slice(0, lastEnd + 1) + "]}";
+}
+
+/** 從模型輸出中找出 JSON 物件（容忍 ```json 圍欄、前後多餘文字、多餘的逗號、被截斷的結尾） */
 export function extractJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = fenced ? fenced[1] : text;
   const start = body.indexOf("{");
   const end = body.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("模型輸出中找不到 JSON 物件");
-  return JSON.parse(body.slice(start, end + 1));
+  const raw = body.slice(start, end + 1);
+  try {
+    return JSON.parse(raw);
+  } catch (first) {
+    const cleaned = removeTrailingCommas(raw);
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      const cut = salvageTruncated(removeTrailingCommas(body.slice(start)));
+      if (cut) {
+        try {
+          return JSON.parse(cut);
+        } catch {
+          /* 救不回來，丟出原本的錯誤 */
+        }
+      }
+      throw first;
+    }
+  }
 }
 
 function str(v: unknown, max: number): string {
