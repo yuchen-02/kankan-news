@@ -19,12 +19,22 @@
     { "binding": "NEWS", "id": "<你的 KV namespace id>" }
   ],
 
-  "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "VisitCounter" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VisitCounter"] }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "COUNTER", "class_name": "VisitCounter" },
+      // 台股盤中推送：有人在看時每 5 秒抓一次並推送給所有人
+      { "name": "STOCKS", "class_name": "StockHub" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["VisitCounter"] },
+    { "tag": "v2", "new_sqlite_classes": ["StockHub"] }
+  ],
 
   // 排程使用 UTC。"0 4,10,23 * * *" = 每天 04:00、10:00、23:00 UTC
   // = 台灣時間 12:00、18:00、隔天 07:00（一天三次：早、中、晚）
-  "triggers": { "crons": ["0 4,10,23 * * *", "20,50 4,10,23 * * *"] },
+  // 台股收盤價："30,40 6 * * 1-5" = 週一到週五 06:30、06:40 UTC = 台灣時間 14:30、14:40（第二次是補抓）
+  "triggers": { "crons": ["0 4,10,23 * * *", "20,50 4,10,23 * * *", "30,40 6 * * 1-5"] },
 
   "vars": {
     // "workers-ai" 或 "claude"

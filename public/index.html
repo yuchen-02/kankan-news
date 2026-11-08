@@ -30,11 +30,33 @@
 <header class="banner">
   <div class="banner-bg" aria-hidden="true"></div>
   <h1 class="sr-only">看看新聞</h1>
+  <button type="button" class="menu-toggle" id="menu-toggle" aria-label="開啟選單" aria-expanded="false" aria-controls="sidenav">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>
+  </button>
   <button type="button" class="theme-toggle" id="theme-toggle" aria-label="切換亮色或暗色背景">
     <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>
     <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
   </button>
 </header>
+
+<!-- 側欄選單：由左邊滑出，用來切換「新聞」「台股」（之後的新功能也加在這裡） -->
+<div class="nav-backdrop" id="nav-backdrop" hidden></div>
+<nav class="sidenav" id="sidenav" aria-label="功能選單" inert>
+  <div class="sidenav-head">
+    <span class="sidenav-title">選單</span>
+    <button type="button" class="sidenav-close" id="sidenav-close" aria-label="關閉選單">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <button type="button" class="nav-item" data-view="news">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h13v13a1.5 1.5 0 0 0 1.5 1.5H6A2 2 0 0 1 4 18z"/><path d="M17 9h3v9.5a1.5 1.5 0 0 1-3 0M7 9h7M7 12.5h7M7 16h4"/></svg>
+    <span>新聞</span>
+  </button>
+  <button type="button" class="nav-item" data-view="stocks">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16"/><path d="M5 15l4.5-4.5 3.5 3 6-6.5"/><path d="M15 7h4v4"/></svg>
+    <span>台股</span>
+  </button>
+</nav>
 
 <!-- 頭條跑馬燈：內容由 app.js 填入；沒有摘要時整條隱藏 -->
 <div class="ticker" id="ticker" role="region" aria-label="頭條" hidden>
@@ -62,6 +84,7 @@
   </section>
 
 
+  <div id="view-news">
   <main>
     <!-- 只在「還沒有摘要」「讀取失敗」「摘要已過期」時顯示一行說明，平常是空的 -->
     <p class="notice" id="msg" aria-live="polite">正在翻今天的新聞…</p>
@@ -90,7 +113,44 @@
     <details id="status"><summary>這一期的資料來源狀態</summary><ul id="status-list"></ul></details>
     <p>天氣來自 Open-Meteo，降雨是預報機率。按定位時，約略座標（小數兩位）會送到 Open-Meteo 和 BigDataCloud 查天氣與地名，不會存在這個網站。</p>
   </footer>
+  </div>
+
+  <!-- 台股：內容由 stocks.js 填入 -->
+  <div id="view-stocks" hidden>
+  <main class="stocks">
+    <div class="issue" id="stk-issue"><span class="issue-name">台股</span></div>
+    <div class="tabs-row stk-bar">
+      <div class="stk-index" id="stk-index" aria-label="加權指數"></div>
+      <div class="time-pick" id="stk-time-pick">
+        <button type="button" class="time-btn stk-colors" id="stk-colors" aria-label="切換漲跌顏色">
+          <span aria-hidden="true">⇄</span>
+        </button>
+        <button type="button" class="time-btn" id="stk-time-btn" aria-haspopup="true" aria-expanded="false" aria-controls="stk-time-menu" aria-label="選擇日期" title="選擇日期">
+          <span class="ic-cal" aria-hidden="true"></span>
+        </button>
+        <div class="time-menu" id="stk-time-menu" hidden></div>
+      </div>
+    </div>
+    <input type="search" class="stk-search" id="stk-search" placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱" autocomplete="off" enterkeyhint="search">
+    <div class="stk-table" id="stk-table" role="table" aria-label="上市股票">
+      <div class="stk-row stk-head" role="row" aria-rowindex="1">
+        <span class="c-code" role="columnheader" aria-sort="ascending"><button type="button" class="sort-btn" id="stk-sort-code">代號</button></span>
+        <span class="c-name" role="columnheader">名稱</span>
+        <span class="c-price" role="columnheader">現價</span>
+        <span class="c-chg" role="columnheader">漲跌</span>
+        <span class="c-pct" role="columnheader" aria-sort="none"><button type="button" class="sort-btn" id="stk-sort-pct">漲跌幅</button></span>
+      </div>
+      <div class="stk-body" id="stk-body" role="rowgroup"></div>
+    </div>
+    <p class="empty" id="stk-empty" hidden></p>
+  </main>
+  <footer>
+    <p>資料來源：臺灣證券交易所。盤中價格約每 5 秒更新一次，只在這個分頁正被看著時更新；僅供參考，不構成投資建議。</p>
+  </footer>
+  </div>
 </div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script type="module" src="/app.js"></script>
 </body>

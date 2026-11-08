@@ -24,6 +24,7 @@ import {
   toneOf,
   flagUrl,
 } from "./lib.js";
+import { createStocks } from "./stocks.js";
 
 const KEY = { visit: "jiegui:lastVisit", theme: "jiegui:theme", tab: "jiegui:tab", geo: "jiegui:geo" };
 const REGION_LABEL = { tw: "台灣", world: "世界" };
@@ -676,9 +677,90 @@ function initVisits() {
     .catch(() => {});
 }
 
+// ── 右下角的小提示（幾秒後自動消失）──────────────────
+
+let toastTimer = 0;
+function toast(text) {
+  const t = $("#toast");
+  t.textContent = text;
+  t.hidden = false;
+  t.classList.remove("out");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    t.classList.add("out");
+    toastTimer = setTimeout(() => { t.hidden = true; }, 300);
+  }, 2000);
+}
+
+// ── 側欄選單＋頁面切換（新聞／台股）────────────────
+
+const VIEWS = ["news", "stocks"];
+let stocks = null;
+let currentView = "news";
+
+function openNav() {
+  const nav = $("#sidenav");
+  nav.inert = false;
+  nav.classList.add("open");
+  $("#nav-backdrop").hidden = false;
+  $("#menu-toggle").setAttribute("aria-expanded", "true");
+  const cur = nav.querySelector('[aria-current="page"]') || nav.querySelector(".nav-item");
+  if (cur) cur.focus();
+}
+
+function closeNav(opts) {
+  const nav = $("#sidenav");
+  if (!nav.classList.contains("open")) return;
+  nav.classList.remove("open");
+  nav.inert = true;
+  $("#nav-backdrop").hidden = true;
+  $("#menu-toggle").setAttribute("aria-expanded", "false");
+  if (!opts || opts.focus !== false) $("#menu-toggle").focus();
+}
+
+function setView(view) {
+  if (!VIEWS.includes(view)) view = "news";
+  currentView = view;
+  $("#view-news").hidden = view !== "news";
+  $("#view-stocks").hidden = view !== "stocks";
+  // 頭條跑馬燈只屬於新聞頁
+  $("#ticker").classList.toggle("off", view !== "news");
+  for (const b of document.querySelectorAll(".nav-item")) {
+    if (b.dataset.view === view) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  }
+  document.title = view === "stocks" ? "台股 · 看看新聞" : "看看新聞";
+  // 網址記住目前的頁面，重新整理後還在同一頁
+  history.replaceState(null, "", view === "news" ? location.pathname + location.search : "#" + view);
+  if (view === "stocks") {
+    if (!stocks) stocks = createStocks({ $, el, store, toast });
+    stocks.show();
+  } else if (stocks) stocks.hide();
+}
+
+function initNav() {
+  $("#menu-toggle").addEventListener("click", () => ($("#sidenav").classList.contains("open") ? closeNav() : openNav()));
+  $("#sidenav-close").addEventListener("click", () => closeNav());
+  $("#nav-backdrop").addEventListener("click", () => closeNav());
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#sidenav").classList.contains("open")) closeNav();
+  });
+  for (const b of document.querySelectorAll(".nav-item")) {
+    b.addEventListener("click", () => {
+      closeNav({ focus: false });
+      if (b.dataset.view !== currentView) {
+        setView(b.dataset.view);
+        scrollTo({ top: 0 });
+      }
+    });
+  }
+  setView(location.hash.slice(1));
+}
+
 // ── 啟動 ────────────────────────────────────────────
 
 initMotion();
+initNav();
 initTheme();
 initClock();
 initTabs();

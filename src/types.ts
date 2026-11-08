@@ -1,4 +1,5 @@
 import type { VisitCounter } from "./counter.ts";
+import type { StockHub } from "./stocks/hub.ts";
 
 export type Region = "tw" | "world";
 
@@ -7,6 +8,8 @@ export interface Env {
   NEWS: KVNamespace;
   /** 訪客計數（Durable Object）。沒綁定時計數功能自動關閉，其他功能不受影響 */
   COUNTER?: DurableObjectNamespace<VisitCounter>;
+  /** 台股盤中推送（Durable Object）。沒綁定時台股頁面只顯示收盤價 */
+  STOCKS?: DurableObjectNamespace<StockHub>;
   /** "workers-ai"（預設）或 "claude" */
   SUMMARIZER?: string;
   AI_MODEL?: string;
