@@ -15,6 +15,7 @@ import {
   visibleRange,
   statusText,
   wantsLive,
+  nextCheckDelay,
 } from "./stocks-lib.js";
 
 const COLORS_KEY = "jiegui:stockColors";
@@ -46,6 +47,7 @@ export function createStocks(ctx) {
     wsRetry: 0,
     wsTimer: 0,
     checkTimer: 0,
+    checkFails: 0, // 連續幾次問不到伺服器
     view: [], // 篩選＋排序後的列
   };
 
@@ -234,7 +236,8 @@ export function createStocks(ctx) {
       s.today = j.today;
       s.liveEnabled = !!j.live;
       s.latest = j.latest;
-      const first = !s.loaded;
+      const first = !s.loaded || s.checkFails > 0; // 失敗後第一次成功，也要把「沒載進來」的訊息換掉
+      s.checkFails = 0;
       s.loaded = true;
       // 收盤價進來了（或第一次載入、或從盤中狀態離開）：畫面換成收盤資料
       const latestChanged = (s.latest && s.latest.date) !== prevDate;
@@ -245,6 +248,7 @@ export function createStocks(ctx) {
       else if (!wantsLive(s.phase)) disconnect();
       if (latestChanged) s.days = null; // 日曆清單要重抓
     } catch (e) {
+      s.checkFails += 1;
       if (!s.loaded) {
         s.loaded = true;
         $("#stk-empty").textContent = "台股資料沒載進來，晚點再重新整理看看。";
@@ -252,8 +256,9 @@ export function createStocks(ctx) {
       }
     }
     // 到了下一個狀態可能改變的時間（開盤、收盤、14:30…）再問一次
-    if (s.active && s.nextCheckAt) {
-      s.checkTimer = setTimeout(check, Math.max(1000, s.nextCheckAt - Date.now() + 1500));
+    const delay = nextCheckDelay(s.nextCheckAt, Date.now(), s.checkFails);
+    if (s.active && delay !== null && document.visibilityState === "visible") {
+      s.checkTimer = setTimeout(check, delay);
     }
   }
 

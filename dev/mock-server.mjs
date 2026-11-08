@@ -115,6 +115,6 @@ http.createServer((req, res) => {
   }
   const p = u.pathname === "/" ? "/index.html" : u.pathname;
   const f = path.join(ROOT, decodeURIComponent(p));
-  if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return send(404, "not found", "text/plain");
+  if (!f.startsWith(ROOT + path.sep) ||!fs.existsSync(f) || fs.statSync(f).isDirectory()) return send(404, "not found", "text/plain");
   send(200, fs.readFileSync(f), TYPES[path.extname(f)] || "application/octet-stream");
-}).listen(PORT, () => console.log(`版面樣本：http://localhost:${PORT}/__samples`));
+}).listen(PORT, "127.0.0.1", () => console.log(`版面樣本：http://localhost:${PORT}/__samples`));

@@ -30,14 +30,17 @@
 <header class="banner">
   <div class="banner-bg" aria-hidden="true"></div>
   <h1 class="sr-only">看看新聞</h1>
-  <button type="button" class="menu-toggle" id="menu-toggle" aria-label="開啟選單" aria-expanded="false" aria-controls="sidenav">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>
-  </button>
-  <button type="button" class="theme-toggle" id="theme-toggle" aria-label="切換亮色或暗色背景">
-    <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>
-    <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
-  </button>
 </header>
+
+<!-- 左上角固定的按鈕：選單一直都在；往下捲到橫幅看不見時，左邊多出 KANKAN NEWS（點了＝重新整理），選單往右讓位 -->
+<button type="button" class="home-pin" id="home-pin" aria-label="重新整理頁面" title="重新整理" tabindex="-1" aria-hidden="true">KANKAN NEWS</button>
+<!-- 右下角：回到頂端（和 KANKAN NEWS 同時出現） -->
+<button type="button" class="to-top" id="to-top" aria-label="回到頁面頂端" title="回到頂端" tabindex="-1" aria-hidden="true">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5h12M12 20V9.5M7 14.5l5-5 5 5"/></svg>
+</button>
+<button type="button" class="menu-toggle" id="menu-toggle" aria-label="開啟選單" aria-expanded="false" aria-controls="sidenav">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>
+</button>
 
 <!-- 側欄選單：由左邊滑出，用來切換「新聞」「台股」（之後的新功能也加在這裡） -->
 <div class="nav-backdrop" id="nav-backdrop" hidden></div>
@@ -56,6 +59,16 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16"/><path d="M5 15l4.5-4.5 3.5 3 6-6.5"/><path d="M15 7h4v4"/></svg>
     <span>台股</span>
   </button>
+  <!-- 最下面一排：左邊意見表單（表單本身由 feedback.js 產生），右邊亮暗切換 -->
+  <div class="sidenav-foot">
+    <button type="button" class="sidenav-icon-btn" id="feedback-btn" title="意見表單" aria-label="意見表單" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </button>
+    <button type="button" class="sidenav-icon-btn theme-toggle" id="theme-toggle" title="切換亮色或暗色" aria-label="切換亮色或暗色背景">
+      <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+    </button>
+  </div>
 </nav>
 
 <!-- 頭條跑馬燈：內容由 app.js 填入；沒有摘要時整條隱藏 -->
@@ -112,6 +125,7 @@
     <p>標題、摘要與標籤是由 AI 讀完各參考新聞來源後所整理，點擊字卡或來源可查看原文。</p>
     <details id="status"><summary>這一期的資料來源狀態</summary><ul id="status-list"></ul></details>
     <p>天氣來自 Open-Meteo，降雨是預報機率。按定位時，約略座標（小數兩位）會送到 Open-Meteo 和 BigDataCloud 查天氣與地名，不會存在這個網站。</p>
+    <p>打開頁面時，瀏覽器會直接連到 Google Fonts、flagcdn、Open-Meteo 和新聞圖片所在的媒體網站，這些服務會看到你的 IP 位址。</p>
   </footer>
   </div>
 

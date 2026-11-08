@@ -1,0 +1,9 @@
+# 靜態檔案的安全標頭（/api/* 由 Worker 回應，不適用這個檔案）。
+# script-src 的 sha256 是 index.html 內嵌主題腳本的雜湊：改了那段腳本要一起更新，test/api.test.ts 會檢查。
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-OinB1YOTHXQ3A32IxCQcgz4Q24BZxBewXE4XJYH50vw='; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' wss://news-digest.looksomenews.workers.dev https://api.open-meteo.com https://api.bigdatacloud.net https://feedback.looksomenews.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(self), camera=(), microphone=()

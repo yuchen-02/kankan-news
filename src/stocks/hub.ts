@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { diffQuotes, isMarketHours, taipeiTime, type IndexQuote, type LiveQuote } from "./market.ts";
+import { diffQuotes, isMarketHours, liveSlotsFull, taipeiTime, type IndexQuote, type LiveQuote } from "./market.ts";
 import { fetchLive, getUniverse } from "./store.ts";
 import type { Env } from "../types.ts";
 
@@ -23,7 +23,12 @@ export interface LiveMessage {
   at?: string;
   index?: IndexQuote | null;
   quotes?: LiveQuote[];
-  error?: string;
+}
+
+/** 連線的標籤：用來算同一個 IP 有幾條連線。存的是雜湊，連線斷了就消失 */
+async function ipTag(ip: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+  return [...new Uint8Array(buf)].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 interface Latest {
@@ -59,17 +64,19 @@ export class StockHub extends DurableObject<Env> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("需要 WebSocket", { status: 426 });
     }
+    const tag = await ipTag(request.headers.get("cf-connecting-ip") ?? "unknown");
+    if (liveSlotsFull(this.ctx.getWebSockets().length, this.ctx.getWebSockets(tag).length)) {
+      return new Response("連線數已滿", { status: 429 });
+    }
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    this.ctx.acceptWebSocket(server);
+    this.ctx.acceptWebSocket(server, [tag]);
 
-    const now = Date.now();
-    if (this.latest) {
-      server.send(JSON.stringify(this.fullMessage(this.latest)));
-      if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(now + this.intervalFor(now));
-    } else {
-      // 手上沒有資料（剛啟動或休眠醒來）：馬上抓一次
-      await this.ctx.storage.setAlarm(now);
+    if (this.latest) server.send(JSON.stringify(this.fullMessage(this.latest)));
+    // 已經排好下一次就不動（連續失敗時的等待不會被新連線打斷）；手上沒有資料（剛啟動或休眠醒來）就馬上抓一次
+    if ((await this.ctx.storage.getAlarm()) === null) {
+      const now = Date.now();
+      await this.ctx.storage.setAlarm(this.latest ? now + this.intervalFor(now) : now);
     }
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -116,9 +123,8 @@ export class StockHub extends DurableObject<Env> {
       await this.ctx.storage.setAlarm(start + (status === "holiday" ? IDLE_INTERVAL_MS : interval));
     } catch (e) {
       this.failures += 1;
-      const error = e instanceof Error ? e.message : String(e);
-      console.error("stock live fetch failed:", error);
-      this.broadcast(JSON.stringify({ type: "status", status: "stale", error } satisfies LiveMessage));
+      console.error("stock live fetch failed:", e instanceof Error ? e.message : String(e));
+      this.broadcast(JSON.stringify({ type: "status", status: "stale" } satisfies LiveMessage));
       // 連續失敗就拉長間隔（可能被證交所暫時擋下），最長一分鐘
       const backoff = Math.min(interval * 2 ** this.failures, MAX_BACKOFF_MS);
       await this.ctx.storage.setAlarm(Date.now() + backoff);

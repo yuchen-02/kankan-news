@@ -10,6 +10,8 @@ export interface Env {
   COUNTER?: DurableObjectNamespace<VisitCounter>;
   /** 台股盤中推送（Durable Object）。沒綁定時台股頁面只顯示收盤價 */
   STOCKS?: DurableObjectNamespace<StockHub>;
+  /** 每個 IP 的 API 流量限制。沒綁定時不限制 */
+  API_LIMIT?: RateLimit;
   /** "workers-ai"（預設）或 "claude" */
   SUMMARIZER?: string;
   AI_MODEL?: string;

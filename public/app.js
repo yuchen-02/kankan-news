@@ -25,6 +25,11 @@ import {
   flagUrl,
 } from "./lib.js";
 import { createStocks } from "./stocks.js";
+import { initFeedback } from "./feedback.js";
+
+/** 意見表單：送到和 anime 專案共用的回饋服務；project 會出現在信的標題與資料庫裡 */
+const FEEDBACK_URL = "https://feedback.looksomenews.workers.dev";
+const FEEDBACK_PROJECT = "news-digest";
 
 const KEY = { visit: "jiegui:lastVisit", theme: "jiegui:theme", tab: "jiegui:tab", geo: "jiegui:geo" };
 const REGION_LABEL = { tw: "台灣", world: "世界" };
@@ -502,7 +507,7 @@ function renderEvent(e, region, i) {
   for (const u of wanted) if (u && /^https:\/\//i.test(u) && !urls.includes(u)) urls.push(u);
   const lead = i === 0;
   const box = lead && urls.length ? el("div", { class: "thumbs" }) : null;
-  const slot = lead ? null : el("div", { class: "slot" });
+  const slot = lead ? null : el("div", { class: "thumb-slot" });
   for (const u of urls.slice(0, 2)) {
     const img = el("img", { class: "thumb", src: u, alt: "", loading: lead ? "eager" : "lazy", decoding: "async", referrerpolicy: "no-referrer" });
     img.addEventListener("error", () => {
@@ -552,7 +557,7 @@ function renderEvent(e, region, i) {
 function renderPanel(region, r) {
   const panel = $("#panel-" + region);
   panel.textContent = "";
-  if (r.error) panel.appendChild(el("p", { class: "err", text: "這一頁沒整理成功：" + r.error }));
+  if (r.error) panel.appendChild(el("p", { class: "err", text: "這一頁這次沒整理成功。" }));
   else if (r.articleCount === 0) panel.appendChild(el("p", { class: "empty", text: "這個時段各家媒體都沒有新文章。" }));
   else if (r.events.length === 0) panel.appendChild(el("p", { class: "empty", text: "這個時段沒有特別值得整理的大事。" }));
   // 第一則是頭條（大圖大標題），其餘排成兩欄的緊湊卡片
@@ -743,8 +748,10 @@ function initNav() {
   $("#sidenav-close").addEventListener("click", () => closeNav());
   $("#nav-backdrop").addEventListener("click", () => closeNav());
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && $("#sidenav").classList.contains("open")) closeNav();
+    // 意見表單開著時，Esc 只關表單，不連側欄一起關
+    if (e.key === "Escape" && $("#sidenav").classList.contains("open") && !document.querySelector(".fb-shade")) closeNav();
   });
+  initFeedback({ button: $("#feedback-btn"), endpoint: FEEDBACK_URL, project: FEEDBACK_PROJECT, onToast: toast });
   for (const b of document.querySelectorAll(".nav-item")) {
     b.addEventListener("click", () => {
       closeNav({ focus: false });
@@ -755,11 +762,76 @@ function initNav() {
     });
   }
   setView(location.hash.slice(1));
+  // 手動改網址的 #stocks、或從書籤跳過來時，也要切換頁面
+  addEventListener("hashchange", () => {
+    const view = location.hash.slice(1) || "news";
+    if (view === currentView) return;
+    setView(view);
+    scrollTo({ top: 0 });
+  });
+}
+
+// ── 左上角固定按鈕：橫幅捲出畫面後出現 KANKAN NEWS（點了＝重新整理），選單鈕往右讓位 ──
+
+function initPin() {
+  const root = document.documentElement;
+  const home = $("#home-pin");
+  const toTop = $("#to-top");
+  const banner = document.querySelector(".banner");
+  const gap = () => parseFloat(getComputedStyle(root).getPropertyValue("--pin-gap")) || 8;
+  // 選單鈕要往右移多少＝KANKAN NEWS 的寬度＋間距（字型載入、手機/桌機切換後寬度會變，所以每次重新量）
+  const measure = () => root.style.setProperty("--pin-shift", home.offsetWidth + gap() + "px");
+
+  const setPinned = (on) => {
+    if (on) measure();
+    root.classList.toggle("pinned", on);
+    // 沒出現時不能用 Tab 選到，也不唸給螢幕閱讀器
+    for (const b of [home, toTop]) {
+      b.tabIndex = on ? 0 : -1;
+      b.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+  };
+
+  // 橫幅底部捲到左上角按鈕那一排之上（看不到 KANKAN NEWS 字樣）時釘選
+  const pinH = () => parseFloat(getComputedStyle(root).getPropertyValue("--pin-top")) + home.offsetHeight + gap();
+  let io = null;
+  const observe = () => {
+    if (io) io.disconnect();
+    io = new IntersectionObserver(([e]) => setPinned(!e.isIntersecting), { rootMargin: `-${Math.round(pinH())}px 0px 0px 0px` });
+    io.observe(banner);
+  };
+  observe();
+  addEventListener("resize", () => {
+    observe();
+    if (root.classList.contains("pinned")) measure();
+  });
+  if (document.fonts) document.fonts.ready.then(() => root.classList.contains("pinned") && measure());
+
+  home.addEventListener("click", () => location.reload());
+  toTop.addEventListener("click", () => {
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollTo({ top: 0, behavior: still ? "auto" : "smooth" });
+    // 按鈕回到頂端後會消失，焦點交給選單鈕，鍵盤使用者不會迷路
+    $("#menu-toggle").focus({ preventScroll: true });
+  });
+
+  // 台股表頭黏在按鈕下方時，才把它上面那段縫蓋起來（沒黏住時蓋了會擋到搜尋框）
+  let ticking = false;
+  addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const head = document.querySelector("#view-stocks:not([hidden]) .stk-head");
+      if (head) head.classList.toggle("stuck", head.getBoundingClientRect().top <= pinH() + 0.5);
+    });
+  }, { passive: true });
 }
 
 // ── 啟動 ────────────────────────────────────────────
 
 initMotion();
+initPin();
 initNav();
 initTheme();
 initClock();

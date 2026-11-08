@@ -132,18 +132,7 @@ a { color: inherit; }
   clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-/* 亮暗切換鈕：右上角，實心深色底，在任何圖片上都看得到 */
-.theme-toggle {
-  position: absolute; top: 12px; right: 14px; z-index: 1;
-  width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer;
-  color: #ffffff; background: rgba(12, 22, 32, 0.82);
-  border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-}
-.theme-toggle:hover { background: rgba(12, 22, 32, 0.95); }
-.theme-toggle:focus-visible { outline-color: #ffffff; }
-.theme-toggle svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* 亮暗切換鈕：在側欄右下角（樣式見 .sidenav-icon-btn），亮色時顯示月亮、暗色時顯示太陽 */
 .theme-toggle .icon-sun { display: none; }
 :root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
 :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
@@ -275,8 +264,6 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
 .bad { color: var(--new); }
 
 @media (max-width: 520px) {
-  .theme-toggle { top: 8px; right: 8px; width: 38px; height: 38px; }
-  .theme-toggle svg { width: 19px; height: 19px; }
   .tab { padding: 12px 22px; }
 }
 
@@ -364,13 +351,13 @@ footer ul { margin: 8px 0 0; padding-left: 1.2em; }
    上排高度固定（--slot-h），所以同一列的卡片，摘要一定從同樣的高度開始 */
 .event.compact { --slot-w: 168px; --slot-h: 112px; }
 .event.compact .body { display: grid; grid-template-columns: var(--slot-w) minmax(0, 1fr); grid-template-rows: var(--slot-h) 1fr; column-gap: 14px; row-gap: 12px; align-items: start; }
-.slot { grid-column: 1; grid-row: 1; position: relative; width: var(--slot-w); height: var(--slot-h); overflow: hidden; background: var(--rule); }
-.slot .thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: transparent; }
-.slot.empty {
+.thumb-slot { grid-column: 1; grid-row: 1; position: relative; width: var(--slot-w); height: var(--slot-h); overflow: hidden; background: var(--rule); border: 1px solid var(--rule); border-radius: 2px; }
+.thumb-slot .thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: transparent; }
+.thumb-slot.empty {
   background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rule) 70%, transparent) 0 7px, transparent 7px 14px), var(--card);
   box-shadow: inset 0 0 0 1px var(--rule);
 }
-.slot.empty::after {
+.thumb-slot.empty::after {
   content: "KANKAN\A NEWS"; white-space: pre; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
   font: 700 0.95rem/1.2 var(--num); letter-spacing: 0.2em; color: var(--muted); opacity: 0.7;
 }
@@ -475,10 +462,10 @@ html[data-motion="lively"] {
 .flags img { animation: fade var(--m-dur) ease backwards; }
 
 /* 按鈕：顏色過渡＋按下去的回饋 */
-.tab, .theme-toggle, .geo-btn, .time-btn, .slot {
+.tab, .sidenav-icon-btn, .geo-btn, .time-btn, .slot {
   transition: background-color var(--m-fast) ease, color var(--m-fast) ease, border-color var(--m-fast) ease, transform var(--m-fast) var(--m-ease);
 }
-.tab:active, .theme-toggle:active, .geo-btn:active, .time-btn:active, .slot:active { transform: scale(var(--m-press)); }
+.tab:active, .sidenav-icon-btn:active, .geo-btn:active, .time-btn:active, .slot:active { transform: scale(var(--m-press)); }
 .srcs a { transition: color var(--m-fast) ease; }
 
 /* 亮／暗色切換：只在手動切換的 450ms 內，讓整頁顏色平順過渡（由 app.js 加上 theme-fading） */
@@ -533,22 +520,73 @@ html.theme-fading *::after {
 :root[data-theme="dark"] { --stk-red: #f0645c; --stk-green: #3cbf7a; }
 :root[data-stock-colors="us"] { --up: var(--stk-green); --down: var(--stk-red); }
 
+/* 選單鈕＋KANKAN NEWS 鈕。
+   選單鈕一直固定在畫面上：一開始在橫幅左上角，往下捲時跟著留在原位。
+   捲到橫幅看不見時（app.js 在 <html> 加上 pinned）：KANKAN NEWS 出現在畫面左上角，
+   選單鈕滑到它右邊（--pin-shift＝KANKAN NEWS 的寬度＋間距，由 app.js 量好設定） */
+:root { --pin-top: 12px; --pin-left: 14px; --pin-size: 44px; --pin-gap: 8px; --pin-h: calc(var(--pin-top) + var(--pin-size) + var(--pin-gap)); }
+.menu-toggle, .home-pin {
+  position: fixed; top: var(--pin-top); left: var(--pin-left); z-index: 30;
+  height: var(--pin-size); cursor: pointer; border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
 .menu-toggle {
-  position: absolute; top: 12px; left: 14px; z-index: 1;
-  width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer;
+  /* 橫幅在寬螢幕上置中、最寬 1100px，選單鈕要對齊橫幅的左上角，不是畫面的左邊 */
+  left: max(var(--pin-left), calc((100% - var(--banner-max-width)) / 2 + var(--pin-left)));
+  width: var(--pin-size); display: grid; place-items: center;
+  color: #ffffff; background: rgba(12, 22, 32, 0.82); border: 1.5px solid rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  transition: background-color var(--m-fast) ease, transform var(--m-fast) var(--m-ease), left var(--m-dur) var(--m-ease);
+}
+:root.pinned .menu-toggle { left: calc(var(--pin-left) + var(--pin-shift, 0px)); }
+.menu-toggle:hover { background: rgba(12, 22, 32, 0.95); }
+.menu-toggle:focus-visible { outline-color: #ffffff; }
+
+/* KANKAN NEWS：配合橫幅的配色——橘黃框、黑字（亮暗主題都一樣）；
+   底色是白灰，只有左上、右下兩個角落有一小塊數位迷彩（3px 方格，淺灰為主、深灰點綴，往中間越來越稀疏）；
+   字加一圈淺色光暈，壓在迷彩上也看得清楚 */
+.home-pin {
+  padding: 0 14px; font: 800 0.85rem/1 var(--sans); letter-spacing: 0.22em; white-space: nowrap;
+  color: #121416; border: 2px solid #e6a51e;
+  text-shadow: 0 0 2px #f2f2ef, 0 0 4px #f2f2ef, 0 0 6px rgba(242, 242, 239, 0.8);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='54' height='30' viewBox='0 0 18 10' shape-rendering='crispEdges'%3E%3Cpath fill='%23c6c7c2' d='M0 0h6v1h-6zM8 0h3v1h-3zM12 0h1v1h-1zM16 0h1v1h-1zM0 1h2v1h-2zM5 1h4v1h-4zM11 1h1v1h-1zM0 2h1v1h-1zM3 2h3v1h-3zM7 2h2v1h-2zM0 3h4v1h-4zM5 3h2v1h-2zM9 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM9 4h1v1h-1zM0 5h2v1h-2zM0 6h1v1h-1zM2 6h1v1h-1zM1 7h1v1h-1zM0 8h1v1h-1z'/%3E%3Cpath fill='%237f8283' d='M6 0h2v1h-2zM2 1h3v1h-3zM1 2h2v1h-2zM12 2h1v1h-1zM1 4h1v1h-1zM4 5h1v1h-1z'/%3E%3C/svg%3E") left top / 54px 30px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='54' height='30' viewBox='0 0 18 10' shape-rendering='crispEdges'%3E%3Cpath fill='%23c6c7c2' d='M10 0h1v1h-1zM11 1h1v1h-1zM14 1h1v1h-1zM13 2h1v1h-1zM15 2h2v1h-2zM8 3h1v1h-1zM12 3h2v1h-2zM16 3h2v1h-2zM10 4h1v1h-1zM12 4h5v1h-5zM7 5h1v1h-1zM10 5h2v1h-2zM13 5h3v1h-3zM5 6h1v1h-1zM9 6h3v1h-3zM14 6h4v1h-4zM3 7h1v1h-1zM6 7h1v1h-1zM8 7h6v1h-6zM16 7h2v1h-2zM7 8h2v1h-2zM10 8h8v1h-8zM4 9h1v1h-1zM6 9h6v1h-6zM15 9h3v1h-3z'/%3E%3Cpath fill='%237f8283' d='M14 3h1v1h-1zM17 4h1v1h-1zM12 5h1v1h-1zM16 5h2v1h-2zM12 6h2v1h-2zM14 7h2v1h-2zM9 8h1v1h-1zM12 9h3v1h-3z'/%3E%3C/svg%3E") right bottom / 54px 30px no-repeat,
+    #ebebe7;
+  opacity: 0; visibility: hidden; translate: 0 -6px;
+  transition: background-color var(--m-fast) ease, transform var(--m-fast) var(--m-ease),
+    opacity var(--m-dur) ease, translate var(--m-dur) var(--m-ease), visibility 0s linear var(--m-dur);
+}
+:root.pinned .home-pin { opacity: 1; visibility: visible; translate: none; transition-delay: 0s; }
+.home-pin:hover { background-color: #f4f4f1; border-color: #f0b42c; }
+
+/* 右下角「回到頂端」圓形按鈕：和選單鈕同一個樣式，跟 KANKAN NEWS 同時出現 */
+.to-top {
+  position: fixed; z-index: 30; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 48px; height: 48px; display: grid; place-items: center; cursor: pointer;
   color: #ffffff; background: rgba(12, 22, 32, 0.82);
-  border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 50%;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-  transition: background-color var(--m-fast) ease, transform var(--m-fast) var(--m-ease);
+  opacity: 0; visibility: hidden; translate: 0 8px;
+  transition: background-color var(--m-fast) ease, transform var(--m-fast) var(--m-ease),
+    opacity var(--m-dur) ease, translate var(--m-dur) var(--m-ease), visibility 0s linear var(--m-dur);
 }
-.menu-toggle:hover { background: rgba(12, 22, 32, 0.95); }
-.menu-toggle:active { transform: scale(var(--m-press)); }
-.menu-toggle:focus-visible { outline-color: #ffffff; }
-.menu-toggle svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+:root.pinned .to-top { opacity: 1; visibility: visible; translate: none; transition-delay: 0s; }
+.to-top:hover { background: rgba(12, 22, 32, 0.95); }
+.to-top:active { transform: scale(var(--m-press)); }
+.to-top:focus-visible { outline-color: #ffffff; }
+.to-top svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 520px) {
-  .menu-toggle { top: 8px; left: 8px; width: 38px; height: 38px; }
+  .to-top { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 44px; height: 44px; }
+  .to-top svg { width: 20px; height: 20px; }
+}
+.home-pin:focus-visible { outline-color: #e6a51e; }
+.menu-toggle:active, .home-pin:active { transform: scale(var(--m-press)); }.menu-toggle svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+@media (max-width: 520px) {
+  :root { --pin-top: 8px; --pin-left: 8px; --pin-size: 38px; }
   .menu-toggle svg { width: 19px; height: 19px; }
+  .home-pin { padding: 0 11px; font-size: 0.78rem; letter-spacing: 0.16em; }
 }
 
 .nav-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.38); animation: fade var(--m-fast) ease; }
@@ -578,7 +616,61 @@ html.theme-fading *::after {
 .nav-item[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
 .nav-item svg { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
+/* 側欄最下面（左下角）：意見表單按鈕，和側欄的關閉鈕同一個樣式 */
+.sidenav-foot { display: flex; justify-content: space-between; margin-top: auto; padding: 10px 4px 0; border-top: 1px solid var(--rule); }
+.sidenav-icon-btn {
+  width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer;
+  color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 6px;
+  transition: border-color var(--m-fast) ease, background-color var(--m-fast) ease;
+}
+.sidenav-icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.sidenav-icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+
 .ticker.off { display: none !important; }
+
+/* ── 意見表單（feedback.js，搬自 anime 專案，顏色改成跟著亮暗主題）── */
+.fb-shade {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.5);
+  opacity: 0; transition: opacity 0.25s;
+}
+.fb-shade.open { opacity: 1; }
+.fb-dialog {
+  width: min(440px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 16px 18px 14px;
+  font-family: var(--sans); color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule); border-top: 3px solid var(--signal); border-radius: 10px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  transform: scale(0.05); opacity: 0; /* transform-origin（按鈕的位置）由 feedback.js 設定 */
+  transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s;
+}
+.fb-shade.open .fb-dialog { transform: none; opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .fb-shade, .fb-dialog { transition: none; } }
+.fb-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.fb-head h2 { margin: 0; font-size: 1.05rem; letter-spacing: 0.08em; }
+.fb-x {
+  width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer;
+  color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 6px;
+}
+.fb-x:hover { border-color: var(--accent); }
+.fb-x svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.fb-step { margin: 8px 0 4px; font-size: 0.8rem; color: var(--muted); }
+.fb-title { display: block; margin-bottom: 8px; font-size: 1.05rem; font-weight: 700; }
+.fb-field {
+  display: block; width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit; color: inherit; resize: vertical;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: 8px;
+}
+.fb-field:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fb-error { min-height: 1.4em; margin: 6px 0 0; color: var(--stk-red); font-size: 0.85rem; }
+.fb-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.fb-btn {
+  min-width: 84px; height: 38px; padding: 0 16px; cursor: pointer;
+  font: 700 0.92rem/1 var(--sans); letter-spacing: 0.06em; color: var(--ink); background: transparent;
+  border: 1px solid var(--rule); border-radius: 6px;
+}
+.fb-btn:hover { border-color: var(--accent); }
+.fb-btn[hidden] { display: none; }
+.fb-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.fb-btn:disabled { opacity: 0.55; pointer-events: none; }
+.fb-note { margin: 12px 0 0; font-size: 0.75rem; color: var(--muted); }
+.fb-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 
 /* ── 右下角提示 ── */
 .toast {
@@ -589,6 +681,11 @@ html.theme-fading *::after {
   transition: opacity 300ms ease;
 }
 .toast.out { opacity: 0; }
+/* 「回到頂端」按鈕出現時，提示改從按鈕上方跳出 */
+:root.pinned .toast { bottom: calc(16px + 48px + 12px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 520px) {
+  :root.pinned .toast { bottom: calc(12px + 44px + 12px + env(safe-area-inset-bottom, 0px)); }
+}
 
 /* ── 台股 ── */
 .stocks .issue { margin-top: 22px; }
@@ -616,8 +713,13 @@ html.theme-fading *::after {
 .stk-body { position: relative; }
 .stk-body .stk-row { position: absolute; top: 0; left: 0; right: 0; border-top: 1px solid var(--rule); }
 .stk-head {
-  position: sticky; top: 0; z-index: 2; background: var(--strip); color: var(--strip-ink);
+  position: sticky; top: var(--pin-h); z-index: 2; background: var(--strip); color: var(--strip-ink);
   font: 700 0.85rem/1 var(--sans); letter-spacing: 0.08em;
+}
+/* 表頭停在左上角按鈕的下方；上面那一段用和頁面一樣的背景蓋住，捲上去的列不會從縫裡露出來 */
+.stk-head.stuck::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--pin-h); pointer-events: none;
+  background: var(--bg) var(--page-bg) center / cover no-repeat fixed;
 }
 .stk-row .c-price, .stk-row .c-chg, .stk-row .c-pct { text-align: right; }
 .c-code { font: 600 1rem/1 var(--num); letter-spacing: 0.04em; }

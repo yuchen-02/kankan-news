@@ -7,6 +7,11 @@
  * - 加權指數收盤值：證交所 OpenAPI MI_INDEX（MIS 的指數值收盤後不一定是最終值）。
  */
 
+/** 盤中推送的連線上限：全站總數、單一 IP */
+export const LIVE_MAX_SOCKETS = 200;
+export const LIVE_MAX_PER_IP = 5;
+export const liveSlotsFull = (total: number, fromIp: number): boolean => total >= LIVE_MAX_SOCKETS || fromIp >= LIVE_MAX_PER_IP;
+
 /** 加權指數的 MIS 代號 */
 export const INDEX_CH = "tse_t00.tw";
 /** 一次 MIS 請求帶幾檔（實測 140 檔可以，留一點餘裕） */

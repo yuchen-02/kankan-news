@@ -133,6 +133,16 @@ export function statusText(o) {
   }
 }
 
+/**
+ * 多久後再問一次伺服器（毫秒）；null＝不用再問。
+ * 上一次失敗：30 秒起、每次加倍、最長 5 分鐘（這時 nextCheckAt 可能已經過期，不能照它算）。
+ * 上一次成功：等到狀態可能改變的時間。
+ */
+export function nextCheckDelay(nextCheckAt, now, failures) {
+  if (failures > 0) return Math.min(30000 * 2 ** (failures - 1), 300000);
+  return nextCheckAt ? Math.max(1000, nextCheckAt - now + 1500) : null;
+}
+
 /** 這個狀態要不要連盤中推送（盤中、收盤後到收盤價抓到之前，都顯示最後成交價） */
 export function wantsLive(phase) {
   return phase === "live" || phase === "after" || phase === "fetching" || phase === "failed";

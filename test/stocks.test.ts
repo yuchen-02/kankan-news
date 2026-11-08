@@ -263,3 +263,14 @@ test("stocks-lib：狀態文字", () => {
   assert.equal(lib.wantsLive("after"), true);
   assert.equal(lib.wantsLive("closed"), false);
 });
+
+test("nextCheckDelay：失敗時退避（不會因為 nextCheckAt 過期而每秒重試），成功時等到下一個時間點", () => {
+  const now = 1_000_000;
+  assert.equal(lib.nextCheckDelay(now - 60_000, now, 1), 30_000);
+  assert.equal(lib.nextCheckDelay(now - 60_000, now, 2), 60_000);
+  assert.equal(lib.nextCheckDelay(null, now, 1), 30_000);
+  assert.equal(lib.nextCheckDelay(now - 60_000, now, 20), 300_000);
+  assert.equal(lib.nextCheckDelay(now + 10_000, now, 0), 11_500);
+  assert.equal(lib.nextCheckDelay(now - 60_000, now, 0), 1_000);
+  assert.equal(lib.nextCheckDelay(null, now, 0), null);
+});
