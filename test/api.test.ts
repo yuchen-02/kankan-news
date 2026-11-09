@@ -75,6 +75,23 @@ test("給訪客的摘要不含內部錯誤訊息，也保留「失敗」的狀�
   assert.equal(j.digest.regions.tw.sources[0].ok, false);
 });
 
+test("econNews 不會出現在給訪客的摘要裡", async () => {
+  const { env } = fakeEnv({ latest: { ...digest(), econNews: [{ title: "候選", url: "https://a.test", source: "x" }] } });
+  const j = (await (await handleRequest(new Request(BASE + "/api/latest"), env)).json()) as { digest: Digest };
+  assert.equal(j.digest.econNews, undefined);
+});
+
+test("/api/stocks 帶上最新一天的收盤分析", async () => {
+  const insight = { date: "2026-11-06", text: "t" };
+  const { env } = fakeEnv({
+    "stocks:days": ["2026-11-06"],
+    "stocks:close:2026-11-06": { date: "2026-11-06", quotes: [] },
+    "stocks:insight:2026-11-06": insight,
+  });
+  const j = (await (await handleRequest(new Request(BASE + "/api/stocks"), env)).json()) as { insight: unknown };
+  assert.deepEqual(j.insight, insight);
+});
+
 test("HEAD 比照 GET，但沒有內容", async () => {
   const { env } = fakeEnv();
   const res = await handleRequest(new Request(BASE + "/api/digests", { method: "HEAD" }), env);

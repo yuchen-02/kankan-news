@@ -1,12 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
-import { diffQuotes, isMarketHours, liveSlotsFull, taipeiTime, type IndexQuote, type LiveQuote } from "./market.ts";
+import { LIVE_STALE_AFTER, diffQuotes, isMarketHours, liveBackoffMs, liveSlotsFull, taipeiTime, type IndexQuote, type LiveQuote } from "./market.ts";
 import { fetchLive, getUniverse } from "./store.ts";
 import type { Env } from "../types.ts";
 
 /** 盤中每 5 秒抓一次；收盤後（還在看最後成交價的人）每分鐘一次就夠了，資料不會再變 */
 export const LIVE_INTERVAL_MS = 5_000;
 const IDLE_INTERVAL_MS = 60_000;
-const MAX_BACKOFF_MS = 60_000;
 
 /** 推送給頁面的狀態：live＝盤中、after＝已收盤（最後成交價）、holiday＝今天休市、stale＝暫時抓不到（畫面上是之前的資料） */
 export type LiveStatus = "live" | "after" | "holiday" | "stale";
@@ -124,10 +123,9 @@ export class StockHub extends DurableObject<Env> {
     } catch (e) {
       this.failures += 1;
       console.error("stock live fetch failed:", e instanceof Error ? e.message : String(e));
-      this.broadcast(JSON.stringify({ type: "status", status: "stale" } satisfies LiveMessage));
-      // 連續失敗就拉長間隔（可能被證交所暫時擋下），最長一分鐘
-      const backoff = Math.min(interval * 2 ** this.failures, MAX_BACKOFF_MS);
-      await this.ctx.storage.setAlarm(Date.now() + backoff);
+      if (this.failures >= LIVE_STALE_AFTER) this.broadcast(JSON.stringify({ type: "status", status: "stale" } satisfies LiveMessage));
+      // 連續失敗就拉長間隔（可能被證交所暫時擋下）
+      await this.ctx.storage.setAlarm(Date.now() + liveBackoffMs(interval, this.failures));
     }
   }
 

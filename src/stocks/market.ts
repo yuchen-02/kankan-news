@@ -12,6 +12,11 @@ export const LIVE_MAX_SOCKETS = 200;
 export const LIVE_MAX_PER_IP = 5;
 export const liveSlotsFull = (total: number, fromIp: number): boolean => total >= LIVE_MAX_SOCKETS || fromIp >= LIVE_MAX_PER_IP;
 
+/** 盤中抓取失敗後的等待時間：5、10、20… 秒，最長一分鐘（收盤後本來就一分鐘一次） */
+export const liveBackoffMs = (intervalMs: number, failures: number): number => Math.min(intervalMs * 2 ** Math.max(0, failures - 1), 60_000);
+/** 連續失敗幾次才告訴頁面「連線不穩」；只失敗一次時，畫面只是晚幾秒更新 */
+export const LIVE_STALE_AFTER = 2;
+
 /** 加權指數的 MIS 代號 */
 export const INDEX_CH = "tse_t00.tw";
 /** 一次 MIS 請求帶幾檔（實測 140 檔可以，留一點餘裕） */
@@ -23,6 +28,8 @@ export type StockName = [code: string, name: string];
 export type LiveQuote = [code: string, price: number | null, change: number | null, pct: number | null];
 /** [代號, 名稱, 現價, 漲跌, 漲跌幅%] */
 export type CloseQuote = [code: string, name: string, price: number | null, change: number | null, pct: number | null];
+/** 成交量排行的一列：[代號, 名稱, 成交量（張）, 漲跌幅%] */
+export type VolumeRank = [code: string, name: string, volume: number, pct: number | null];
 
 export interface IndexQuote {
   value: number | null;
@@ -37,6 +44,8 @@ export interface CloseSnapshot {
   fetchedAt: string;
   index: IndexQuote | null;
   quotes: CloseQuote[];
+  /** 成交量前幾名（收盤分析用）；舊資料沒有這個欄位 */
+  topVolume?: VolumeRank[];
 }
 
 /**
@@ -64,6 +73,7 @@ export const FETCH_MIN = 14 * 60 + 30; // 14:30 第一次抓收盤價
 export const RETRY_MIN = 14 * 60 + 40; // 14:40 再抓一次
 /** 超過這個時間今天的收盤價還沒進來，就當作失敗（排程沒跑或兩次都失敗） */
 export const GIVE_UP_MIN = 14 * 60 + 50;
+const INSIGHT_READY_MIN = 14 * 60 + 52;
 
 export interface TaipeiTime {
   /** YYYY-MM-DD */
@@ -114,6 +124,12 @@ export function phaseAt(nowMs: number, status: CloseStatus | null): { phase: Pha
   if (today?.state === "failed") return { phase: "failed", nextCheckAt: null };
   if (t.minutes < GIVE_UP_MIN) return { phase: "fetching", nextCheckAt: Math.min(nowMs + 60_000, at(GIVE_UP_MIN)) };
   return { phase: "failed", nextCheckAt: null };
+}
+
+/** 今天的收盤分析大約 14:50 產生；頁面已經開著、分析還沒進來時，14:52 再問一次。其他情況回傳 null */
+export function insightCheckAt(nowMs: number, latestDate: string | null, hasInsight: boolean): number | null {
+  const t = taipeiTime(nowMs);
+  return !hasInsight && latestDate === t.date && t.minutes < INSIGHT_READY_MIN ? taipeiMs(t.date, INSIGHT_READY_MIN) : null;
 }
 
 // ── 數字 ────────────────────────────────────────────
@@ -185,6 +201,8 @@ export interface MisRow {
   date: string | null;
   /** 資料時間 HH:MM:SS */
   time: string | null;
+  /** 當日累積成交量（張） */
+  volume: number | null;
 }
 
 /**
@@ -206,6 +224,7 @@ export function parseMis(json: unknown): MisRow[] {
       prev: num(m.y),
       date: d,
       time: typeof m.t === "string" ? m.t : typeof m["%"] === "string" ? m["%"] : null,
+      volume: num(m.v),
     });
   }
   return out;
@@ -223,6 +242,16 @@ export function parseIndexClose(rows: unknown): { date: string; quote: IndexQuot
   const pct = Number(String(r["漲跌百分比"] ?? "").replace(/,/g, ""));
   if (!date || value === null) return null;
   return { date, quote: { value, change: pts === null ? 0 : round2(sign * pts), pct: Number.isFinite(pct) ? round2(pct) : null } };
+}
+
+/** 成交量前 n 名 */
+export function topVolumeOf(quotes: CloseQuote[], volumes: Map<string, number | null>, n = 5): VolumeRank[] {
+  const out: VolumeRank[] = [];
+  for (const q of quotes) {
+    const v = volumes.get(q[0]);
+    if (v) out.push([q[0], q[1], v, q[4]]);
+  }
+  return out.sort((a, b) => b[2] - a[2] || cmpCode(a[0], b[0])).slice(0, n);
 }
 
 /** 民國年 "1151106" → "2026-11-06" */

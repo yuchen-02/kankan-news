@@ -17,6 +17,7 @@ import {
   parseMis,
   parseStockList,
   taipeiTime,
+  topVolumeOf,
   type CloseQuote,
   type CloseSnapshot,
   type CloseStatus,
@@ -28,7 +29,7 @@ import {
 type Fetch = typeof fetch;
 
 export const KEEP_DAYS = 122; // 約 4 個月
-const CLOSE_TTL_SECONDS = 60 * 60 * 24 * (KEEP_DAYS + 1);
+export const CLOSE_TTL_SECONDS = 60 * 60 * 24 * (KEEP_DAYS + 1);
 const K = {
   universe: "stocks:universe",
   days: "stocks:days",
@@ -50,12 +51,28 @@ export async function fetchStockList(f: Fetch = fetch): Promise<StockName[]> {
   return list;
 }
 
-/** 抓 MIS（全部批次同時送出）。任何一批失敗就整個失敗，避免畫面上一半新一半舊 */
+const MIS_RETRY_DELAY_MS = 500;
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 抓一批 MIS；短暫的伺服器錯誤（5xx、連線中斷）隔一下再試一次。逾時已經等了 8 秒，不重試 */
+async function fetchMisBatch(chs: string[], f: Fetch): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await f(misUrl(chs), { headers: UA, signal: AbortSignal.timeout(8_000) });
+      if (res.status < 500 || attempt > 0) return res;
+    } catch (e) {
+      if (attempt > 0 || (e instanceof Error && e.name === "TimeoutError")) throw e;
+    }
+    await wait(MIS_RETRY_DELAY_MS);
+  }
+}
+
+/** 抓 MIS（全部批次同時送出）。任何一批重試後仍失敗就整個失敗，避免畫面上一半新一半舊 */
 export async function fetchMis(codes: string[], f: Fetch = fetch): Promise<MisRow[]> {
   const batches = misBatches(codes);
   const results = await Promise.all(
     batches.map(async (chs) => {
-      const res = await f(misUrl(chs), { headers: UA, signal: AbortSignal.timeout(8_000) });
+      const res = await fetchMisBatch(chs, f);
       if (!res.ok) throw new Error(`MIS HTTP ${res.status}`);
       const text = await res.text();
       let json: unknown;
@@ -164,7 +181,8 @@ export async function runCloseJob(env: { NEWS: KVNamespace }, opts: { now?: numb
       const [change, pct] = changeOf(price, row?.prev ?? null);
       return [code, names.get(code) ?? row?.name ?? code, price, change, pct];
     });
-    const snap: CloseSnapshot = { date: live.date, fetchedAt: new Date(now).toISOString(), index, quotes };
+    const topVolume = topVolumeOf(quotes, new Map(rows.map((r) => [r.code, r.volume])));
+    const snap: CloseSnapshot = { date: live.date, fetchedAt: new Date(now).toISOString(), index, quotes, topVolume };
 
     if (live.date === today) {
       await putClose(kv, snap);

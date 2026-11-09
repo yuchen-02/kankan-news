@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { balanceQuota, moveForeignEvents, quotas, repairLatest, runPipeline, runScheduled } from "../src/pipeline.ts";
+import { balanceQuota, collectEconNews, moveForeignEvents, quotas, repairLatest, runPipeline, runScheduled } from "../src/pipeline.ts";
 import type { ChosenSummarizer } from "../src/summarizers/index.ts";
 import type { Digest, Env, SummarizeInput } from "../src/types.ts";
 
@@ -412,4 +412,21 @@ test("runScheduled：整點正式整理；補救時段依狀況重做、補救�
   // 另一個整點完全沒有摘要（整點整理時兩區都失敗）→ :20 整個重做
   const next = hour + 6 * 3600_000;
   assert.match(await runScheduled(env, next + 20 * 60_000, { ...deps, now: new Date(next + 20 * 60_000), summarizer: sumAllOk }), /^retry digest /);
+});
+
+test("collectEconNews：只挑「經濟」、同連結留一則", () => {
+  const ev = (headline: string, url: string, categories?: string[]) => ({
+    headline,
+    summary: "s",
+    disputed: null,
+    sources: [{ name: "媒體", url, title: headline }],
+    sourceCount: 1,
+    ...(categories ? { categories } : {}),
+  });
+  const news = collectEconNews(
+    [ev("甲", "https://a.test/1", ["政治", "經濟"]), ev("乙", "https://a.test/2", ["政治"]), ev("無標籤", "https://a.test/3")],
+    [ev("丙", "https://a.test/1", ["經濟"]), ev("丁", "https://a.test/4", ["經濟"])],
+  );
+  assert.deepEqual(news.map((n) => n.title), ["甲", "丁"]);
+  assert.equal(news[0].source, "媒體");
 });

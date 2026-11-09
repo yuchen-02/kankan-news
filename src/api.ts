@@ -1,5 +1,6 @@
 import { repairLatest, runPipeline } from "./pipeline.ts";
-import { phaseAt, taipeiTime } from "./stocks/market.ts";
+import { getInsight, runInsightJob } from "./stocks/insight.ts";
+import { insightCheckAt, phaseAt, taipeiTime } from "./stocks/market.ts";
 import { getClose, getDays, getLatestClose, getStatus, runCloseJob } from "./stocks/store.ts";
 import type { Digest, DigestIndexEntry, Env, RegionDigest } from "./types.ts";
 
@@ -49,7 +50,8 @@ function publicDigest(d: Digest): Digest {
     ...(r.error ? { error: "整理失敗" } : {}),
     sources: r.sources.map(({ error: _error, ...s }) => s),
   });
-  return { ...d, regions: { tw: region(d.regions.tw), world: region(d.regions.world) } };
+  const { econNews: _econNews, ...rest } = d;
+  return { ...rest, regions: { tw: region(d.regions.tw), world: region(d.regions.world) } };
 }
 
 /** 每個 IP 的流量限制（數值設定在 wrangler.jsonc）。沒綁定或限制服務出錯時放行，不讓它擋掉正常功能 */
@@ -86,9 +88,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   // 頁面打開時先問這個：現在是什麼狀態（盤中／收盤…）＋最近一天的收盤資料
   if (url.pathname === "/api/stocks" && method === "GET") {
     const now = Date.now();
-    const [status, latest] = await cached(env.NEWS, "stocks", 15_000, () => Promise.all([getStatus(env.NEWS), getLatestClose(env.NEWS)]));
+    const [status, latest, insight] = await cached(env.NEWS, "stocks", 15_000, async () => {
+      const [st, close] = await Promise.all([getStatus(env.NEWS), getLatestClose(env.NEWS)]);
+      return [st, close, close ? await getInsight(env.NEWS, close.date) : null] as const;
+    });
     const { phase, nextCheckAt } = phaseAt(now, status);
-    return json({ phase, nextCheckAt, today: taipeiTime(now).date, live: !!env.STOCKS, latest });
+    const next = nextCheckAt ?? (phase === "closed" ? insightCheckAt(now, latest?.date ?? null, !!insight) : null);
+    return json({ phase, nextCheckAt: next, today: taipeiTime(now).date, live: !!env.STOCKS, latest, insight });
   }
 
   if (url.pathname === "/api/stocks/days" && method === "GET") {
@@ -98,8 +104,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/stocks/day" && method === "GET") {
     const date = url.searchParams.get("date") ?? "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "date 格式不正確" }, { status: 400 });
-    const snapshot = await cached(env.NEWS, `stocks-day:${date}`, 60_000, () => getClose(env.NEWS, date));
-    return snapshot ? json({ snapshot }, {}, 3600) : json({ error: "找不到這一天的收盤資料" }, { status: 404 });
+    const [snapshot, insight] = await cached(env.NEWS, `stocks-day:${date}`, 60_000, () => Promise.all([getClose(env.NEWS, date), getInsight(env.NEWS, date)]));
+    return snapshot ? json({ snapshot, insight }, {}, 3600) : json({ error: "找不到這一天的收盤資料" }, { status: 404 });
   }
 
   // 盤中推送：WebSocket 連到 Durable Object；只接受從本站頁面連進來的（瀏覽器一定會帶 Origin）
@@ -137,6 +143,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (url.searchParams.get("stocks") === "1") {
       try {
         return json({ ok: true, ...(await runCloseJob(env, { force: true })) });
+      } catch (e) {
+        return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+      }
+    }
+    // POST /api/refresh?insight=1：立刻重新產生最新一天的收盤分析
+    if (url.searchParams.get("insight") === "1") {
+      try {
+        return json({ ok: true, ...(await runInsightJob(env, { force: true })) });
       } catch (e) {
         return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
       }

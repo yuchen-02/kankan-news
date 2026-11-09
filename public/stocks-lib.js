@@ -16,6 +16,11 @@ export function fmtPrice(v) {
   return v.toLocaleString("en-US", { minimumFractionDigits: v < 1000 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
+/** 成交量（張）：41,343 張 */
+export function fmtVolume(v) {
+  return Number.isFinite(v) ? v.toLocaleString("en-US") + " 張" : "—";
+}
+
 /** 漲跌：+12.50 / -105 / 0；小數位數跟著價格走（價格 1000 以下固定兩位），沒有就是 "—" */
 export function fmtChange(v, price) {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—";

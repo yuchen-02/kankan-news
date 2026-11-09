@@ -1,6 +1,7 @@
 // 台股頁面：收盤價（KV）＋盤中推送（WebSocket，只在這個分頁正被看著時連線）
 import {
   fmtDay,
+  fmtVolume,
   fmtPrice,
   fmtChange,
   fmtPct,
@@ -19,6 +20,8 @@ import {
 } from "./stocks-lib.js";
 
 const COLORS_KEY = "jiegui:stockColors";
+const INSIGHT_KEY = "jiegui:stockInsight"; // 收盤分析收合（"0"）或展開
+const INSIGHT_NOTE = "由 AI 依當日行情數字整理，非投資建議；相關新聞由程式依標籤挑選，不代表與漲跌有因果關係。";
 const ROW_H = 44; // 每一列的高度（px），要和 style.css 的 --stk-row 一樣
 const MENU_DAYS_OPEN = 10; // 日曆選單預設列出最近幾個交易日，更早的收在「更早」裡
 
@@ -26,7 +29,7 @@ const MENU_DAYS_OPEN = 10; // 日曆選單預設列出最近幾個交易日，�
  * @param {{ $: (s: string) => any, el: Function, store: { get(k: string): string|null, set(k: string, v: string): void }, toast: (t: string) => void }} ctx
  */
 export function createStocks(ctx) {
-  const { $, el, store, toast } = ctx;
+  const { $, el, store, toast, safeHref } = ctx;
 
   const s = {
     active: false, // 台股頁面正在顯示
@@ -37,6 +40,8 @@ export function createStocks(ctx) {
     liveEnabled: false,
     latest: null, // 最近一天的收盤資料
     viewing: null, // 正在看的往期收盤資料（null＝最新）
+    insight: null, // 最近一天的收盤分析
+    viewingInsight: null, // 正在看的往期的收盤分析
     days: null,
     rows: new Map(),
     live: null, // { status, date, time, stale }
@@ -142,6 +147,57 @@ export function createStocks(ctx) {
     else rebuild();
   }
 
+  // ── 收盤分析 ──
+  const insightBox = $("#stk-insight");
+  if (store.get(INSIGHT_KEY) === "0") insightBox.open = false;
+  insightBox.addEventListener("toggle", () => {
+    store.set(INSIGHT_KEY, insightBox.open ? "1" : "0");
+    schedulePaint(); // 高度變了，股票表格要重算看得到哪幾列
+  });
+
+  function rankBlock(title, rows) {
+    const list = el("ol", { class: "ins-rank" });
+    for (const r of rows) {
+      const li = el("li", { class: "t-" + trendOf(r.pct) });
+      li.appendChild(el("span", { class: "c-name", text: r.code + " " + r.name }));
+      li.appendChild(el("span", { class: "c-pct", text: r.value }));
+      list.appendChild(li);
+    }
+    return el("div", { class: "ins-block" }, [el("h4", { text: title }), list]);
+  }
+
+  function renderInsight() {
+    const ins = s.viewing ? s.viewingInsight : s.insight;
+    insightBox.hidden = !ins;
+    if (ins) {
+      $("#stk-insight-date").textContent = fmtDay(ins.date);
+      const body = $("#stk-insight-body");
+      body.textContent = "";
+      if (ins.text) body.appendChild(el("p", { class: "ins-text", text: ins.text }));
+      const asPct = (q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtPct(q[3]) });
+      const ranks = el("div", { class: "ins-ranks" }, [
+        rankBlock("漲幅前 5 名", ins.gainers.map(asPct)),
+        rankBlock("跌幅前 5 名", ins.losers.map(asPct)),
+      ]);
+      if (ins.topVolume.length) {
+        ranks.appendChild(rankBlock("成交量前 5 名", ins.topVolume.map((q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtVolume(q[2]) }))));
+      }
+      body.appendChild(ranks);
+      if (ins.news.length) {
+        const list = el("ul", { class: "ins-news" });
+        for (const n of ins.news) {
+          list.appendChild(el("li", null, [
+            el("a", { href: safeHref(n.url), target: "_blank", rel: "noopener noreferrer", text: n.title }),
+            el("span", { class: "ins-src", text: n.source }),
+          ]));
+        }
+        body.appendChild(el("div", { class: "ins-block" }, [el("h4", { text: "當天財經新聞" }), list]));
+      }
+      body.appendChild(el("p", { class: "ins-note", text: INSIGHT_NOTE }));
+    }
+    schedulePaint();
+  }
+
   // ── 上方：期別、狀態、加權指數 ──
   function renderHead() {
     const snap = s.viewing || s.latest;
@@ -220,6 +276,7 @@ export function createStocks(ctx) {
     s.index = null;
     rebuild();
     renderHead();
+    renderInsight();
   }
 
   // ── 狀態：問伺服器現在是盤中、收盤、還是在抓收盤價 ──
@@ -236,6 +293,7 @@ export function createStocks(ctx) {
       s.today = j.today;
       s.liveEnabled = !!j.live;
       s.latest = j.latest;
+      s.insight = j.insight || null;
       const first = !s.loaded || s.checkFails > 0; // 失敗後第一次成功，也要把「沒載進來」的訊息換掉
       s.checkFails = 0;
       s.loaded = true;
@@ -243,7 +301,10 @@ export function createStocks(ctx) {
       const latestChanged = (s.latest && s.latest.date) !== prevDate;
       if (!s.viewing && (first || latestChanged || (wantsLive(prevPhase) && !wantsLive(s.phase)) || (!s.ws && !wantsLive(s.phase)))) {
         resetToClose();
-      } else renderHead();
+      } else {
+        renderHead();
+        renderInsight();
+      }
       if (shouldLive()) connect();
       else if (!wantsLive(s.phase)) disconnect();
       if (latestChanged) s.days = null; // 日曆清單要重抓
@@ -355,6 +416,7 @@ export function createStocks(ctx) {
     try {
       const j = await getJson("/api/stocks/day?date=" + encodeURIComponent(date));
       s.viewing = j.snapshot;
+      s.viewingInsight = j.insight || null;
       disconnect();
       resetToClose();
       scrollTo({ top: 0 });

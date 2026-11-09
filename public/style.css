@@ -698,6 +698,30 @@ html.theme-fading *::after {
 .ix-chg, .ix-pct { font: 600 1.15rem/1 var(--num); font-variant-numeric: tabular-nums; }
 .stk-colors span { font: 700 1.25rem/1 var(--sans); }
 
+/* 收盤分析：指數下方可收合的卡片 */
+.stk-insight { margin-top: 14px; background: var(--card); box-shadow: inset 4px 0 0 var(--signal); }
+.stk-insight summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 16px 8px 20px; cursor: pointer; }
+.stk-insight summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform var(--m-fast) ease; }
+.stk-insight:not([open]) summary::after { transform: rotate(-90deg); }
+.stk-insight summary::-webkit-details-marker { display: none; }
+.ins-title { font: 700 0.95rem/1.2 var(--sans); letter-spacing: 0.08em; }
+.ins-date { color: var(--muted); font-size: 0.85rem; }
+.ins-body { padding: 0 16px 14px 20px; }
+.ins-text { margin: 0 0 14px; font-size: 0.97rem; }
+.ins-ranks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 20px; }
+.ins-block h4 { margin: 0 0 6px; color: var(--muted); font: 700 0.82rem/1.4 var(--sans); letter-spacing: 0.06em; }
+.ins-rank { margin: 0; padding: 0; list-style: none; }
+.ins-rank li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 0.88rem; }
+.ins-rank .c-name { min-width: 0; }
+.ins-rank .c-pct { flex: none; }
+.ins-news { margin: 0; padding: 0; list-style: none; font-size: 0.9rem; }
+.ins-news li { padding: 4px 0; border-top: 1px solid var(--rule); }
+.ins-news li:first-child { border-top: 0; }
+.ins-news a { color: inherit; text-underline-offset: 3px; }
+.ins-src { margin-left: 8px; color: var(--muted); font-size: 0.8rem; }
+.ins-body > .ins-block { margin-top: 14px; }
+.ins-note { margin: 12px 0 0; color: var(--muted); font-size: 0.78rem; }
+
 .stk-search {
   display: block; width: 100%; margin-top: 16px; padding: 10px 14px; min-height: 44px;
   font: 400 1rem/1.4 var(--sans); color: var(--ink); background: var(--card);
@@ -743,6 +767,7 @@ html.theme-fading *::after {
   .c-code, .c-chg, .c-pct { font-size: 0.92rem; }
   .c-price { font-size: 0.98rem; }
   .ix-value { font-size: 1.6rem; }
+  .ins-ranks { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 400px) {
   /* 很窄的手機：不放「漲跌」那一欄，留下漲跌幅 */

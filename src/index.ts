@@ -2,22 +2,24 @@ import { handleRequest } from "./api.ts";
 import { runScheduled } from "./pipeline.ts";
 export { VisitCounter } from "./counter.ts";
 export { StockHub } from "./stocks/hub.ts";
+import { runInsightJob } from "./stocks/insight.ts";
 import { runCloseJob } from "./stocks/store.ts";
 import type { Env } from "./types.ts";
 
-/** 抓收盤價的排程（UTC 06:30、06:40 = 台北 14:30、14:40，週一到週五）；要和 wrangler.jsonc 裡的寫法一模一樣。
+/** 台股排程（UTC 06:30、06:40 抓收盤價，06:50 產生收盤分析 = 台北 14:30、14:40、14:50，週一到週五）；要和 wrangler.jsonc 裡的寫法一模一樣。
  *  （Worker 的主檔只能 export 處理函式與 Durable Object 類別，所以這裡不 export） */
-const STOCK_CRON = "30,40 6 * * 1-5";
+const STOCK_CRON = "30,40,50 6 * * 1-5";
 
 export default {
   fetch: (request: Request, env: Env): Promise<Response> => handleRequest(request, env),
 
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (event.cron === STOCK_CRON) {
+      const minute = new Date(event.scheduledTime).getUTCMinutes();
       // 14:40 那次是最後機會：再失敗就標記失敗
-      const retry = new Date(event.scheduledTime).getUTCMinutes() === 40;
+      const job = minute === 50 ? runInsightJob(env, { now: event.scheduledTime }) : runCloseJob(env, { now: event.scheduledTime, retry: minute === 40 });
       ctx.waitUntil(
-        runCloseJob(env, { now: event.scheduledTime, retry }).then(
+        job.then(
           (r) => console.log("stocks:", r.message),
           (e) => {
             console.error(e instanceof Error ? e.message : e);

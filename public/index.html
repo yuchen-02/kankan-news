@@ -145,6 +145,11 @@
         <div class="time-menu" id="stk-time-menu" hidden></div>
       </div>
     </div>
+    <!-- 收盤分析：內容由 stocks.js 填入；那一天沒有分析就整塊隱藏 -->
+    <details class="stk-insight" id="stk-insight" open hidden>
+      <summary><span class="ins-title">收盤分析</span><span class="ins-date" id="stk-insight-date"></span></summary>
+      <div class="ins-body" id="stk-insight-body"></div>
+    </details>
     <input type="search" class="stk-search" id="stk-search" placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱" autocomplete="off" enterkeyhint="search">
     <div class="stk-table" id="stk-table" role="table" aria-label="上市股票">
       <div class="stk-row stk-head" role="row" aria-rowindex="1">

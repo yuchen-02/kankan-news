@@ -109,6 +109,13 @@ export interface RegionDigest {
   error?: string;
 }
 
+/** 收盤分析用的財經新聞：標題由 AI 整理，連結一律來自原始文章 */
+export interface EconNews {
+  title: string;
+  url: string;
+  source: string;
+}
+
 export interface Digest {
   id: string;
   generatedAt: string;
@@ -117,6 +124,8 @@ export interface Digest {
   summarizer: string;
   model: string;
   regions: Record<Region, RegionDigest>;
+  /** 裁成網站顯示的則數之前，兩區標成「經濟」的新聞（收盤分析用，不會給訪客）；舊的摘要沒有這個欄位 */
+  econNews?: EconNews[];
 }
 
 export interface DigestIndexEntry {

@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildLive,
+  insightCheckAt,
+  liveBackoffMs,
+  topVolumeOf,
   changeOf,
   diffQuotes,
   isMarketHours,
@@ -14,10 +17,13 @@ import {
   rocDate,
   taipeiMs,
   taipeiTime,
+  type CloseSnapshot,
   type CloseStatus,
   type LiveQuote,
 } from "../src/stocks/market.ts";
-import { runCloseJob } from "../src/stocks/store.ts";
+import { fetchMis, runCloseJob } from "../src/stocks/store.ts";
+import { buildFacts, runInsightJob, validateInsight } from "../src/stocks/insight.ts";
+import type { Env } from "../src/types.ts";
 // @ts-ignore 前端用的純 JS 模組
 import * as lib from "../public/stocks-lib.js";
 
@@ -108,9 +114,9 @@ test("changeOf：漲跌與漲跌幅（兩位小數）", () => {
 test("buildLive：指數分開放、沒成交沿用上一次的價格、依代號排序", () => {
   const live = buildLive(
     [
-      { code: "t00", name: "加權", price: 39690.74, prev: 41574.72, date: "2026-11-06", time: "13:19:50" },
-      { code: "2330", name: "台積電", price: null, prev: 2240, date: "2026-11-06", time: "13:30:00" },
-      { code: "0050", name: "元大台灣50", price: 92.5, prev: 97.15, date: "2026-11-06", time: "13:30:00" },
+      { code: "t00", name: "加權", price: 39690.74, prev: 41574.72, date: "2026-11-06", time: "13:19:50", volume: null },
+      { code: "2330", name: "台積電", price: null, prev: 2240, date: "2026-11-06", time: "13:30:00", volume: null },
+      { code: "0050", name: "元大台灣50", price: 92.5, prev: 97.15, date: "2026-11-06", time: "13:30:00", volume: null },
     ],
     new Map([["2330", 2135]]),
   );
@@ -273,4 +279,141 @@ test("nextCheckDelay：失敗時退避（不會因為 nextCheckAt 過期而每�
   assert.equal(lib.nextCheckDelay(now + 10_000, now, 0), 11_500);
   assert.equal(lib.nextCheckDelay(now - 60_000, now, 0), 1_000);
   assert.equal(lib.nextCheckDelay(null, now, 0), null);
+});
+
+// ── 盤中連線 ──
+
+test("liveBackoffMs：失敗後等 5、10、20… 秒，最長一分鐘", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map((n) => liveBackoffMs(5_000, n)), [5_000, 10_000, 20_000, 40_000, 60_000, 60_000]);
+  assert.equal(liveBackoffMs(60_000, 1), 60_000);
+});
+
+test("fetchMis：單批 5xx 或連線中斷會重試一次；成功就不算失敗", async () => {
+  for (const fail of [() => new Response("x", { status: 502 }), () => { throw new Error("network"); }]) {
+    let calls = 0;
+    const f = (async () => {
+      calls++;
+      if (calls === 1) return fail();
+      return new Response(JSON.stringify({ rtcode: "0000", msgArray: [{ c: "2330", z: "100", y: "99", v: "1200", d: "20261109" }] }));
+    }) as typeof fetch;
+    const rows = await fetchMis([], f);
+    assert.equal(calls, 2);
+    assert.equal(rows[0].volume, 1200);
+  }
+});
+
+test("fetchMis：重試後還是失敗就丟錯；4xx 不重試", async () => {
+  let calls = 0;
+  await assert.rejects(fetchMis([], (async () => (calls++, new Response("x", { status: 520 }))) as typeof fetch), /MIS HTTP 520/);
+  assert.equal(calls, 2);
+  calls = 0;
+  await assert.rejects(fetchMis([], (async () => (calls++, new Response("x", { status: 403 }))) as typeof fetch), /MIS HTTP 403/);
+  assert.equal(calls, 1);
+});
+
+// ── 收盤分析 ──
+
+const SNAP: CloseSnapshot = {
+  date: "2026-11-09",
+  fetchedAt: "2026-11-09T06:30:00.000Z",
+  index: { value: 41661.7, change: 1960.06, pct: 4.94 },
+  quotes: [
+    ["0050", "元大台灣50", 100, 2, 2.04],
+    ["2330", "台積電", 2235, 100, 4.68],
+    ["2464", "盟立", 148.5, 13.5, 10],
+    ["4771", "望隼", 180, -20, -10],
+    ["1101", "台泥", 30, 0, 0],
+    ["9999", "沒成交", null, null, null],
+  ],
+  topVolume: [["2330", "台積電", 41343, 4.68]],
+};
+
+test("topVolumeOf：依成交量排序，沒有量的不列", () => {
+  const top = topVolumeOf(SNAP.quotes, new Map([["2330", 500], ["2464", 900], ["4771", null]]));
+  assert.deepEqual(top.map((r) => [r[0], r[2]]), [["2464", 900], ["2330", 500]]);
+});
+
+test("buildFacts：家數與排行", () => {
+  const f = buildFacts(SNAP);
+  assert.deepEqual(f.breadth, { up: 3, down: 1, flat: 1, none: 1 });
+  assert.deepEqual(f.gainers.map((r) => r[0]), ["2464", "2330", "0050"]);
+  assert.deepEqual(f.losers.map((r) => r[0]), ["4771"]);
+});
+
+test("validateInsight：擋掉資料裡沒有的數字與因果、建議用語", () => {
+  const f = buildFacts(SNAP);
+  const good = "11月9日加權指數收盤41,661.7點，上漲1960.06點，漲跌幅4.94%。上漲3家、下跌1家。盟立漲幅10%，台積電成交量41343張。";
+  assert.equal(validateInsight(good, f), null);
+  assert.match(validateInsight(good + "另有1234張的成交量紀錄。", f) ?? "", /1234/);
+  assert.match(validateInsight(good + "受到美股帶動。", f) ?? "", /受到|帶動/);
+  assert.match(validateInsight(good + "建議投資人留意。", f) ?? "", /建議/);
+  assert.equal(validateInsight("太短", f), "內容太短");
+});
+
+function insightKV(data: Record<string, unknown>) {
+  const puts: Record<string, string> = {};
+  const kv = {
+    get: async (k: string) => data[k] ?? (puts[k] ? JSON.parse(puts[k]) : null),
+    put: async (k: string, v: string) => { puts[k] = v; },
+  } as unknown as KVNamespace;
+  return { kv, puts, env: { NEWS: kv } as unknown as Env };
+}
+
+const OK_TEXT = "加權指數收盤41661.7點，上漲1960.06點，漲跌幅4.94%。上漲3家，下跌1家，平盤1家。盟立漲跌幅10%，望隼漲跌幅-10%。";
+const NOW_MS = at("14:50");
+
+test("runInsightJob：存文字、排行與當天新聞；沒有收盤資料就不產生", async () => {
+  const digest = {
+    econNews: [{ title: "新聞A", url: "https://a.test/1", source: "中央社" }, { title: "新聞A", url: "https://a.test/2", source: "BBC" }],
+    regions: { tw: { events: [] }, world: { events: [] } },
+  };
+  const { env, puts } = insightKV({
+    "stocks:close:2026-11-09": SNAP,
+    index: [
+      { id: "today", generatedAt: "2026-11-09T04:00:00.000Z" },
+      { id: "old", generatedAt: "2026-11-07T04:00:00.000Z" },
+    ],
+    "digest:today": digest,
+    "digest:old": { econNews: [{ title: "舊聞", url: "https://a.test/old", source: "x" }], regions: {} },
+  });
+  const sent: string[] = [];
+  const model = { model: "m", text: async (_s: string, u: string) => (sent.push(u), OK_TEXT) };
+  const r = await runInsightJob(env, { now: NOW_MS, model });
+  assert.equal(r.stored, true);
+  const saved = JSON.parse(puts["stocks:insight:2026-11-09"]);
+  assert.equal(saved.text, OK_TEXT);
+  assert.deepEqual(saved.news.map((n: { title: string }) => n.title), ["新聞A"]);
+  assert.ok(!sent[0].includes("新聞A"), "AI 不應該看到新聞");
+
+  const holiday = insightKV({});
+  assert.equal((await runInsightJob(holiday.env, { now: NOW_MS, model })).stored, false);
+  assert.deepEqual(holiday.puts, {});
+});
+
+test("runInsightJob：模型一直寫不好就只存排行，手動重做失敗時保留舊文字", async () => {
+  const { env, puts } = insightKV({ "stocks:close:2026-11-09": SNAP, "stocks:days": ["2026-11-09"] });
+  const original = console.error;
+  console.error = () => {};
+  try {
+    let calls = 0;
+    const bad = { model: "m", text: async () => (calls++, "加權指數上漲，主要因為美股大漲9999點的影響，後市可期。" + "x".repeat(10)) };
+    await runInsightJob(env, { now: NOW_MS, model: bad });
+    assert.equal(calls, 2);
+    assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, null);
+
+    await runInsightJob(env, { now: NOW_MS, model: { model: "m", text: async () => OK_TEXT } });
+    assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, OK_TEXT);
+
+    await runInsightJob(env, { force: true, now: NOW_MS, model: bad });
+    assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, OK_TEXT);
+  } finally {
+    console.error = original;
+  }
+});
+
+test("insightCheckAt：今天的分析還沒進來時，14:52 再問一次", () => {
+  assert.equal(insightCheckAt(at("14:35"), "2026-11-09", false), at("14:52"));
+  assert.equal(insightCheckAt(at("14:35"), "2026-11-09", true), null);
+  assert.equal(insightCheckAt(at("14:53"), "2026-11-09", false), null);
+  assert.equal(insightCheckAt(at("14:35"), "2026-11-06", false), null);
 });
