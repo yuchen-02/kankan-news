@@ -75,10 +75,10 @@ test("給訪客的摘要不含內部錯誤訊息，也保留「失敗」的狀�
   assert.equal(j.digest.regions.tw.sources[0].ok, false);
 });
 
-test("econNews 不會出現在給訪客的摘要裡", async () => {
-  const { env } = fakeEnv({ latest: { ...digest(), econNews: [{ title: "候選", url: "https://a.test", source: "x" }] } });
-  const j = (await (await handleRequest(new Request(BASE + "/api/latest"), env)).json()) as { digest: Digest };
-  assert.equal(j.digest.econNews, undefined);
+test("候選標題不會出現在給訪客的摘要裡", async () => {
+  const { env } = fakeEnv({ latest: { ...digest(), allHeadlines: ["候選"], econNews: [{ title: "舊候選" }] } });
+  const text = await (await handleRequest(new Request(BASE + "/api/latest"), env)).text();
+  assert.ok(!text.includes("候選"));
 });
 
 test("/api/stocks 帶上最新一天的收盤分析", async () => {

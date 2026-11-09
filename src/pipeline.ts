@@ -7,7 +7,6 @@ import type {
   Digest,
   DigestEvent,
   DigestIndexEntry,
-  EconNews,
   Env,
   RawItem,
   Region,
@@ -264,22 +263,6 @@ export function moveForeignEvents(world: RegionDigest, foreign: DigestEvent[], m
   return moved;
 }
 
-const ECON_CATEGORY = "經濟";
-const KEEP_ECON_NEWS = 12;
-
-/** 從還沒裁切的事件（兩區各最多 ASK 則）挑出「經濟」新聞；同一個連結只留一則 */
-export function collectEconNews(...groups: DigestEvent[][]): EconNews[] {
-  const seen = new Set<string>();
-  const out: EconNews[] = [];
-  for (const e of groups.flat()) {
-    const first = e.sources[0];
-    if (!first || !e.categories?.includes(ECON_CATEGORY) || seen.has(first.url)) continue;
-    seen.add(first.url);
-    out.push({ title: e.headline, url: first.url, source: first.name });
-  }
-  return out.slice(0, KEEP_ECON_NEWS);
-}
-
 /** 每區塊的基本名額與兩區總額 */
 export function quotas(env: Pick<Env, "MAX_EVENTS_TW" | "MAX_EVENTS_WORLD" | "MAX_EVENTS_ASK">): { tw: number; world: number; total: number; ask: number } {
   const tw = Number(env.MAX_EVENTS_TW ?? 8) || 8;
@@ -348,8 +331,8 @@ export async function runPipeline(env: Env, deps: Deps = {}): Promise<RunResult>
   ]);
   const tw = twRun.digest;
   const world = worldRun.digest;
-  // 要在 balanceQuota 裁掉事件之前挑
-  const econNews = collectEconNews(tw.events, twRun.foreign, world.events);
+  // 要在 balanceQuota 裁掉事件之前收集（兩區各最多 ASK 則）
+  const allHeadlines = [...new Set([...tw.events, ...twRun.foreign, ...world.events].map((e) => e.headline))];
   balanceQuota(tw, world, twRun.foreign, quotas(env));
 
   // 兩個區塊都失敗就不要覆蓋掉上一份還能用的摘要
@@ -365,7 +348,7 @@ export async function runPipeline(env: Env, deps: Deps = {}): Promise<RunResult>
     summarizer: summarizer.name,
     model: summarizer.model,
     regions: { tw, world },
-    ...(econNews.length ? { econNews } : {}),
+    ...(allHeadlines.length ? { allHeadlines } : {}),
   };
 
   // 預覽模式：已經有摘要時不寫入任何東西

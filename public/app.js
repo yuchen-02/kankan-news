@@ -738,7 +738,7 @@ function setView(view) {
   // 網址記住目前的頁面，重新整理後還在同一頁
   history.replaceState(null, "", view === "news" ? location.pathname + location.search : "#" + view);
   if (view === "stocks") {
-    if (!stocks) stocks = createStocks({ $, el, store, toast, safeHref });
+    if (!stocks) stocks = createStocks({ $, el, store, toast });
     stocks.show();
   } else if (stocks) stocks.hide();
 }

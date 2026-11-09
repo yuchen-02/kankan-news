@@ -44,8 +44,9 @@ export interface CloseSnapshot {
   fetchedAt: string;
   index: IndexQuote | null;
   quotes: CloseQuote[];
-  /** 成交量前幾名（收盤分析用）；舊資料沒有這個欄位 */
-  topVolume?: VolumeRank[];
+  /** ETF 與個股各自的成交量前幾名（收盤分析用）；舊資料沒有這些欄位 */
+  volumeEtf?: VolumeRank[];
+  volumeStock?: VolumeRank[];
 }
 
 /**
@@ -244,14 +245,18 @@ export function parseIndexClose(rows: unknown): { date: string; quote: IndexQuot
   return { date, quote: { value, change: pts === null ? 0 : round2(sign * pts), pct: Number.isFinite(pct) ? round2(pct) : null } };
 }
 
-/** 成交量前 n 名 */
-export function topVolumeOf(quotes: CloseQuote[], volumes: Map<string, number | null>, n = 5): VolumeRank[] {
-  const out: VolumeRank[] = [];
+/** ETF（00 開頭）與個股各自的成交量前 n 名 */
+export function topVolumeOf(quotes: CloseQuote[], volumes: Map<string, number | null>, n = 5): { etf: VolumeRank[]; stock: VolumeRank[] } {
+  const rows: VolumeRank[] = [];
   for (const q of quotes) {
     const v = volumes.get(q[0]);
-    if (v) out.push([q[0], q[1], v, q[4]]);
+    if (v) rows.push([q[0], q[1], v, q[4]]);
   }
-  return out.sort((a, b) => b[2] - a[2] || cmpCode(a[0], b[0])).slice(0, n);
+  rows.sort((a, b) => b[2] - a[2] || cmpCode(a[0], b[0]));
+  return {
+    etf: rows.filter((r) => r[0].startsWith("00")).slice(0, n),
+    stock: rows.filter((r) => !r[0].startsWith("00")).slice(0, n),
+  };
 }
 
 /** 民國年 "1151106" → "2026-11-06" */

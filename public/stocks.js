@@ -2,6 +2,7 @@
 import {
   fmtDay,
   fmtVolume,
+  insightSummaryParts,
   fmtPrice,
   fmtChange,
   fmtPct,
@@ -21,7 +22,7 @@ import {
 
 const COLORS_KEY = "jiegui:stockColors";
 const INSIGHT_KEY = "jiegui:stockInsight"; // 收盤分析收合（"0"）或展開
-const INSIGHT_NOTE = "由 AI 依當日行情數字整理，非投資建議；相關新聞由程式依標籤挑選，不代表與漲跌有因果關係。";
+const INSIGHT_NOTE = "評論由 AI 依當日行情與新聞標題整理，內容可能有誤，非投資建議；提到的新聞不代表與漲跌有因果關係。";
 const ROW_H = 44; // 每一列的高度（px），要和 style.css 的 --stk-row 一樣
 const MENU_DAYS_OPEN = 10; // 日曆選單預設列出最近幾個交易日，更早的收在「更早」裡
 
@@ -29,7 +30,7 @@ const MENU_DAYS_OPEN = 10; // 日曆選單預設列出最近幾個交易日，�
  * @param {{ $: (s: string) => any, el: Function, store: { get(k: string): string|null, set(k: string, v: string): void }, toast: (t: string) => void }} ctx
  */
 export function createStocks(ctx) {
-  const { $, el, store, toast, safeHref } = ctx;
+  const { $, el, store, toast } = ctx;
 
   const s = {
     active: false, // 台股頁面正在顯示
@@ -173,26 +174,24 @@ export function createStocks(ctx) {
       $("#stk-insight-date").textContent = fmtDay(ins.date);
       const body = $("#stk-insight-body");
       body.textContent = "";
+      const summary = el("p", { class: "ins-summary" });
+      for (const p of insightSummaryParts(ins)) {
+        summary.appendChild(p.trend ? el("span", { class: "ins-num ins-" + p.trend, text: p.text }) : document.createTextNode(p.text));
+      }
+      body.appendChild(summary);
       if (ins.text) body.appendChild(el("p", { class: "ins-text", text: ins.text }));
       const asPct = (q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtPct(q[3]) });
-      const ranks = el("div", { class: "ins-ranks" }, [
-        rankBlock("漲幅前 5 名", ins.gainers.map(asPct)),
-        rankBlock("跌幅前 5 名", ins.losers.map(asPct)),
-      ]);
-      if (ins.topVolume.length) {
-        ranks.appendChild(rankBlock("成交量前 5 名", ins.topVolume.map((q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtVolume(q[2]) }))));
+      const asVolume = (q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtVolume(q[2]) });
+      const ranks = el("div", { class: "ins-ranks" });
+      for (const [title, rows] of [
+        ["漲幅前 5 名", (ins.gainers || []).map(asPct)],
+        ["跌幅前 5 名", (ins.losers || []).map(asPct)],
+        ["ETF 成交量前 5 名", (ins.volumeEtf || []).map(asVolume)],
+        ["個股成交量前 5 名", (ins.volumeStock || []).map(asVolume)],
+      ]) {
+        if (rows.length) ranks.appendChild(rankBlock(title, rows));
       }
       body.appendChild(ranks);
-      if (ins.news.length) {
-        const list = el("ul", { class: "ins-news" });
-        for (const n of ins.news) {
-          list.appendChild(el("li", null, [
-            el("a", { href: safeHref(n.url), target: "_blank", rel: "noopener noreferrer", text: n.title }),
-            el("span", { class: "ins-src", text: n.source }),
-          ]));
-        }
-        body.appendChild(el("div", { class: "ins-block" }, [el("h4", { text: "當天財經新聞" }), list]));
-      }
       body.appendChild(el("p", { class: "ins-note", text: INSIGHT_NOTE }));
     }
     schedulePaint();

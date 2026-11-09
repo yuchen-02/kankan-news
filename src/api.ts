@@ -50,7 +50,8 @@ function publicDigest(d: Digest): Digest {
     ...(r.error ? { error: "整理失敗" } : {}),
     sources: r.sources.map(({ error: _error, ...s }) => s),
   });
-  const { econNews: _econNews, ...rest } = d;
+  // econNews 是舊版存下來的欄位，KV 裡還有，一樣不給訪客
+  const { allHeadlines: _headlines, econNews: _econNews, ...rest } = d as Digest & { econNews?: unknown };
   return { ...rest, regions: { tw: region(d.regions.tw), world: region(d.regions.world) } };
 }
 

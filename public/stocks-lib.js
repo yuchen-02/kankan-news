@@ -16,6 +16,33 @@ export function fmtPrice(v) {
   return v.toLocaleString("en-US", { minimumFractionDigits: v < 1000 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
+/**
+ * 收盤分析的第一段：[{ text, trend? }]，有 trend 的片段要上漲跌色（只有指數收盤、漲跌點、漲跌幅）。
+ * 指數收盤和昨收比較，也就是跟著當天漲跌。
+ */
+export function insightSummaryParts(ins) {
+  const parts = [];
+  const i = ins.index;
+  if (i && Number.isFinite(i.value)) {
+    const trend = trendOf(i.change);
+    const num = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
+    parts.push({ text: "加權指數收盤 " });
+    parts.push({ text: num(i.value), trend });
+    if (trend === "flat") {
+      parts.push({ text: " 點，與昨收持平。" });
+    } else {
+      parts.push({ text: " 點，" + (trend === "up" ? "上漲 " : "下跌 ") });
+      parts.push({ text: num(i.change), trend });
+      parts.push({ text: " 點，" + (trend === "up" ? "漲幅 " : "跌幅 ") });
+      parts.push({ text: num(i.pct) + "%", trend });
+      parts.push({ text: "。" });
+    }
+  }
+  const b = ins.breadth;
+  if (b) parts.push({ text: "上漲 " + b.up + " 家，下跌 " + b.down + " 家，平盤 " + b.flat + " 家。" });
+  return parts;
+}
+
 /** 成交量（張）：41,343 張 */
 export function fmtVolume(v) {
   return Number.isFinite(v) ? v.toLocaleString("en-US") + " 張" : "—";

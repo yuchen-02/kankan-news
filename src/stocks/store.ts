@@ -181,8 +181,8 @@ export async function runCloseJob(env: { NEWS: KVNamespace }, opts: { now?: numb
       const [change, pct] = changeOf(price, row?.prev ?? null);
       return [code, names.get(code) ?? row?.name ?? code, price, change, pct];
     });
-    const topVolume = topVolumeOf(quotes, new Map(rows.map((r) => [r.code, r.volume])));
-    const snap: CloseSnapshot = { date: live.date, fetchedAt: new Date(now).toISOString(), index, quotes, topVolume };
+    const volume = topVolumeOf(quotes, new Map(rows.map((r) => [r.code, r.volume])));
+    const snap: CloseSnapshot = { date: live.date, fetchedAt: new Date(now).toISOString(), index, quotes, volumeEtf: volume.etf, volumeStock: volume.stock };
 
     if (live.date === today) {
       await putClose(kv, snap);

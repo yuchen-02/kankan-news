@@ -22,7 +22,7 @@ import {
   type LiveQuote,
 } from "../src/stocks/market.ts";
 import { fetchMis, runCloseJob } from "../src/stocks/store.ts";
-import { buildFacts, runInsightJob, validateInsight } from "../src/stocks/insight.ts";
+import { advanceStreaks, buildFacts, collectHeadlines, runInsightJob, validateInsight } from "../src/stocks/insight.ts";
 import type { Env } from "../src/types.ts";
 // @ts-ignore 前端用的純 JS 模組
 import * as lib from "../public/stocks-lib.js";
@@ -325,56 +325,90 @@ const SNAP: CloseSnapshot = {
     ["1101", "台泥", 30, 0, 0],
     ["9999", "沒成交", null, null, null],
   ],
-  topVolume: [["2330", "台積電", 41343, 4.68]],
+  volumeEtf: [["0050", "元大台灣50", 9000, 2.04]],
+  volumeStock: [["2330", "台積電", 41343, 4.68]],
 };
 
-test("topVolumeOf：依成交量排序，沒有量的不列", () => {
-  const top = topVolumeOf(SNAP.quotes, new Map([["2330", 500], ["2464", 900], ["4771", null]]));
-  assert.deepEqual(top.map((r) => [r[0], r[2]]), [["2464", 900], ["2330", 500]]);
+test("topVolumeOf：ETF 與個股分開排，沒有量的不列", () => {
+  const top = topVolumeOf(SNAP.quotes, new Map([["2330", 500], ["2464", 900], ["4771", null], ["0050", 100]]));
+  assert.deepEqual(top.etf.map((r) => [r[0], r[2]]), [["0050", 100]]);
+  assert.deepEqual(top.stock.map((r) => [r[0], r[2]]), [["2464", 900], ["2330", 500]]);
 });
 
-test("buildFacts：家數與排行", () => {
-  const f = buildFacts(SNAP);
+test("advanceStreaks：同方向累加、反向重算、平盤或沒成交歸零", () => {
+  const day1 = advanceStreaks(null, SNAP);
+  assert.equal(day1.index, 1);
+  assert.deepEqual(day1.stocks, { "0050": 1, "2330": 1, "2464": 1, "4771": -1, "1101": 0, "9999": 0 });
+  const next: CloseSnapshot = {
+    ...SNAP,
+    date: "2026-11-10",
+    index: { value: 1, change: -5, pct: -1 },
+    quotes: [["2330", "台積電", 1, 3, 1], ["2464", "盟立", 1, -1, -1], ["4771", "望隼", 1, -2, -1], ["1101", "台泥", 1, null, null]],
+  };
+  const day2 = advanceStreaks(day1, next);
+  assert.equal(day2.index, -1);
+  assert.deepEqual(day2.stocks, { "2330": 2, "2464": -1, "4771": -2, "1101": 0 });
+});
+
+test("buildFacts：家數、排行與連續最久（至少 3 天，同天數比今日漲跌幅）", () => {
+  const streaks = { date: SNAP.date, index: 2, stocks: { "0050": 3, "2330": 3, "2464": 2, "4771": -4, "1101": 0 } };
+  const f = buildFacts(SNAP, streaks);
   assert.deepEqual(f.breadth, { up: 3, down: 1, flat: 1, none: 1 });
   assert.deepEqual(f.gainers.map((r) => r[0]), ["2464", "2330", "0050"]);
   assert.deepEqual(f.losers.map((r) => r[0]), ["4771"]);
+  assert.deepEqual(f.streaks.up.map((r) => [r[0], r[2]]), [["2330", 3], ["0050", 3]]);
+  assert.deepEqual(f.streaks.down.map((r) => [r[0], r[2]]), [["4771", 4]]);
+  assert.equal(f.streaks.index, 2);
 });
 
-test("validateInsight：擋掉資料裡沒有的數字與因果、建議用語", () => {
-  const f = buildFacts(SNAP);
-  const good = "11月9日加權指數收盤41,661.7點，上漲1960.06點，漲跌幅4.94%。上漲3家、下跌1家。盟立漲幅10%，台積電成交量41343張。";
-  assert.equal(validateInsight(good, f), null);
-  assert.match(validateInsight(good + "另有1234張的成交量紀錄。", f) ?? "", /1234/);
-  assert.match(validateInsight(good + "受到美股帶動。", f) ?? "", /受到|帶動/);
-  assert.match(validateInsight(good + "建議投資人留意。", f) ?? "", /建議/);
+test("validateInsight：擋數字、因果與建議用語、不在標題裡的事件", () => {
+  const f = buildFacts(SNAP, { date: SNAP.date, index: 2, stocks: { "2330": 3 } });
+  const heads = ["央行宣布利率維持不變", "美國加密貨幣價格大幅下跌"];
+  const good = "台積電已連漲 3 天，ETF 成交量相對集中。今日新聞提到央行宣布利率維持不變，可留意後續影響。";
+  assert.equal(validateInsight(good, f, heads), null);
+  assert.equal(validateInsight("台積電已連漲 3 天，上漲家數明顯多於下跌家數，個股表現分歧不大。", f), null);
+  assert.match(validateInsight("台積電已連漲 99 天，上漲家數明顯多於下跌家數，個股表現分歧。", f) ?? "", /99/);
+  assert.match(validateInsight(good + "這是美股帶動的結果。", f, heads) ?? "", /帶動/);
+  assert.match(validateInsight(good + "建議投資人減少持股部位。", f, heads) ?? "", /建議/);
+  assert.match(validateInsight(good + "這可能對公司營運有幫助。", f, heads) ?? "", /可能/);
+  assert.match(validateInsight("台積電已連漲 3 天。今日新聞提到日本央行突然大幅升息，可留意後續影響。", f, heads) ?? "", /標題/);
   assert.equal(validateInsight("太短", f), "內容太短");
 });
 
 function insightKV(data: Record<string, unknown>) {
   const puts: Record<string, string> = {};
   const kv = {
-    get: async (k: string) => data[k] ?? (puts[k] ? JSON.parse(puts[k]) : null),
+    get: async (k: string) => (puts[k] ? JSON.parse(puts[k]) : (data[k] ?? null)),
     put: async (k: string, v: string) => { puts[k] = v; },
   } as unknown as KVNamespace;
   return { kv, puts, env: { NEWS: kv } as unknown as Env };
 }
 
-const OK_TEXT = "加權指數收盤41661.7點，上漲1960.06點，漲跌幅4.94%。上漲3家，下跌1家，平盤1家。盟立漲跌幅10%，望隼漲跌幅-10%。";
+const OK_TEXT = "加權指數已連漲 2 天，上漲家數明顯多於下跌家數，個股表現分歧不大。";
 const NOW_MS = at("14:50");
 
-test("runInsightJob：存文字、排行與當天新聞；沒有收盤資料就不產生", async () => {
-  const digest = {
-    econNews: [{ title: "新聞A", url: "https://a.test/1", source: "中央社" }, { title: "新聞A", url: "https://a.test/2", source: "BBC" }],
-    regions: { tw: { events: [] }, world: { events: [] } },
-  };
-  const { env, puts } = insightKV({
-    "stocks:close:2026-11-09": SNAP,
+test("collectHeadlines：只拿當天的、舊摘要用顯示中的新聞、去重", async () => {
+  const { kv } = insightKV({
     index: [
-      { id: "today", generatedAt: "2026-11-09T04:00:00.000Z" },
+      { id: "new", generatedAt: "2026-11-09T04:00:00.000Z" },
+      { id: "morning", generatedAt: "2026-11-08T23:00:00.000Z" },
       { id: "old", generatedAt: "2026-11-07T04:00:00.000Z" },
     ],
-    "digest:today": digest,
-    "digest:old": { econNews: [{ title: "舊聞", url: "https://a.test/old", source: "x" }], regions: {} },
+    "digest:new": { allHeadlines: ["甲", "乙"], regions: {} },
+    "digest:morning": { regions: { tw: { events: [{ headline: "乙" }, { headline: "丙" }] }, world: { events: [] } } },
+    "digest:old": { allHeadlines: ["舊"], regions: {} },
+  });
+  assert.deepEqual(await collectHeadlines(kv, "2026-11-09"), ["甲", "乙", "丙"]);
+});
+
+test("runInsightJob：把行情、連續天數和當天標題交給 AI；沒有收盤資料就不產生", async () => {
+  const prev = { ...SNAP, date: "2026-11-06" };
+  const { env, puts } = insightKV({
+    "stocks:close:2026-11-09": SNAP,
+    "stocks:close:2026-11-06": prev,
+    "stocks:days": ["2026-11-09", "2026-11-06"],
+    index: [{ id: "today", generatedAt: "2026-11-09T04:00:00.000Z" }],
+    "digest:today": { allHeadlines: ["今天的候選標題"], regions: {} },
   });
   const sent: string[] = [];
   const model = { model: "m", text: async (_s: string, u: string) => (sent.push(u), OK_TEXT) };
@@ -382,30 +416,36 @@ test("runInsightJob：存文字、排行與當天新聞；沒有收盤資料就�
   assert.equal(r.stored, true);
   const saved = JSON.parse(puts["stocks:insight:2026-11-09"]);
   assert.equal(saved.text, OK_TEXT);
-  assert.deepEqual(saved.news.map((n: { title: string }) => n.title), ["新聞A"]);
-  assert.ok(!sent[0].includes("新聞A"), "AI 不應該看到新聞");
+  assert.equal(saved.streaks.index, 2);
+  assert.equal(saved.news, undefined);
+  assert.deepEqual(saved.volumeStock.map((v: unknown[]) => v[0]), ["2330"]);
+  assert.ok(sent[0].includes("今天的候選標題"));
+  assert.ok(sent[0].includes("連漲 2 天"));
+  // 連續紀錄存起來了，隔天接著算
+  assert.equal(JSON.parse(puts["stocks:streaks"]).stocks["2464"], 2);
 
   const holiday = insightKV({});
   assert.equal((await runInsightJob(holiday.env, { now: NOW_MS, model })).stored, false);
   assert.deepEqual(holiday.puts, {});
 });
 
-test("runInsightJob：模型一直寫不好就只存排行，手動重做失敗時保留舊文字", async () => {
+test("runInsightJob：模型寫不好就只存數字，手動重做失敗時保留舊文字", async () => {
   const { env, puts } = insightKV({ "stocks:close:2026-11-09": SNAP, "stocks:days": ["2026-11-09"] });
   const original = console.error;
   console.error = () => {};
   try {
     let calls = 0;
-    const bad = { model: "m", text: async () => (calls++, "加權指數上漲，主要因為美股大漲9999點的影響，後市可期。" + "x".repeat(10)) };
+    const bad = { model: "m", text: async () => (calls++, "加權指數上漲，主要因為美股大漲9999點，之後可能繼續走高的機會很大。") };
     await runInsightJob(env, { now: NOW_MS, model: bad });
-    assert.equal(calls, 2);
+    assert.equal(calls, 4);
     assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, null);
 
-    await runInsightJob(env, { now: NOW_MS, model: { model: "m", text: async () => OK_TEXT } });
-    assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, OK_TEXT);
+    await runInsightJob(env, { now: NOW_MS, model: { model: "m", text: async () => "加權指數今日上漲，上漲家數明顯多於下跌家數，個股表現分歧不大。" } });
+    const good = JSON.parse(puts["stocks:insight:2026-11-09"]).text;
+    assert.ok(good);
 
     await runInsightJob(env, { force: true, now: NOW_MS, model: bad });
-    assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, OK_TEXT);
+    assert.equal(JSON.parse(puts["stocks:insight:2026-11-09"]).text, good);
   } finally {
     console.error = original;
   }
@@ -416,4 +456,15 @@ test("insightCheckAt：今天的分析還沒進來時，14:52 再問一次", () 
   assert.equal(insightCheckAt(at("14:35"), "2026-11-09", true), null);
   assert.equal(insightCheckAt(at("14:53"), "2026-11-09", false), null);
   assert.equal(insightCheckAt(at("14:35"), "2026-11-06", false), null);
+});
+
+test("insightSummaryParts：只有指數三個數字上色，跌的時候用跌色", () => {
+  const breadth = { up: 993, down: 278, flat: 62, none: 3 };
+  const up = lib.insightSummaryParts({ index: { value: 41661.7, change: 1960.06, pct: 4.94 }, breadth });
+  assert.deepEqual(up.filter((p: { trend?: string }) => p.trend).map((p: { text: string; trend: string }) => [p.text, p.trend]), [["41,661.7", "up"], ["1,960.06", "up"], ["4.94%", "up"]]);
+  assert.equal(up.map((p: { text: string }) => p.text).join(""), "加權指數收盤 41,661.7 點，上漲 1,960.06 點，漲幅 4.94%。上漲 993 家，下跌 278 家，平盤 62 家。");
+  const down = lib.insightSummaryParts({ index: { value: 40000, change: -100.5, pct: -0.25 }, breadth });
+  assert.deepEqual(down.filter((p: { trend?: string }) => p.trend).map((p: { text: string }) => p.text), ["40,000", "100.5", "0.25%"]);
+  assert.ok(down.every((p: { trend?: string }) => !p.trend || p.trend === "down"));
+  assert.match(down.map((p: { text: string }) => p.text).join(""), /下跌 100.5 點，跌幅 0.25%/);
 });
