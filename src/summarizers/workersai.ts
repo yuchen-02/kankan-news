@@ -36,7 +36,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 /** 呼叫一次模型，回傳純文字 */
-export async function workersAiText(env: Env, system: string, user: string, maxTokens: number): Promise<string> {
+export async function workersAiText(env: Env, system: string, user: string, maxTokens: number, temperature = 0.2): Promise<string> {
   const ai = env.AI as unknown as AiBinding;
   const res = await withTimeout(
     ai.run(env.AI_MODEL || DEFAULT_AI_MODEL, {
@@ -46,7 +46,7 @@ export async function workersAiText(env: Env, system: string, user: string, maxT
       ],
       // Workers AI 預設 max_tokens 很小（256），一定要明確設定
       max_tokens: maxTokens,
-      temperature: 0.2,
+      temperature,
     }),
     150_000,
     "Workers AI",

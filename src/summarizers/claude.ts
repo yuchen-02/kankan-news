@@ -5,7 +5,7 @@ import { buildSystemPrompt, buildUserPrompt } from "./prompt.ts";
 export const DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5";
 
 /** 呼叫一次模型，回傳純文字 */
-export async function claudeText(env: Env, system: string, user: string, maxTokens: number): Promise<string> {
+export async function claudeText(env: Env, system: string, user: string, maxTokens: number, temperature = 0.2): Promise<string> {
   if (!env.ANTHROPIC_API_KEY) {
     throw new Error("SUMMARIZER=claude，但沒有設定 ANTHROPIC_API_KEY（npx wrangler secret put ANTHROPIC_API_KEY）");
   }
@@ -20,7 +20,7 @@ export async function claudeText(env: Env, system: string, user: string, maxToke
     body: JSON.stringify({
       model: env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL,
       max_tokens: maxTokens,
-      temperature: 0.2,
+      temperature,
       system,
       messages: [{ role: "user", content: user }],
     }),

@@ -145,6 +145,18 @@
         <div class="time-menu" id="stk-time-menu" hidden></div>
       </div>
     </div>
+    <!-- 加權指數走勢圖：內容由 stocks-chart.js 畫 -->
+    <section class="stk-chart" id="stk-chart" aria-label="加權指數走勢圖">
+      <div class="chart-head">
+        <div class="chart-tabs" role="group" aria-label="走勢圖範圍">
+          <button type="button" data-range="day" aria-pressed="true">當日</button>
+          <button type="button" data-range="1m" aria-pressed="false">1 個月</button>
+          <button type="button" data-range="3m" aria-pressed="false">3 個月</button>
+        </div>
+        <div class="chart-read" id="stk-chart-read"></div>
+      </div>
+      <div class="chart-box" id="stk-chart-box" role="img" aria-label="加權指數走勢圖"></div>
+    </section>
     <!-- 收盤分析：內容由 stocks.js 填入；那一天沒有分析就整塊隱藏 -->
     <details class="stk-insight" id="stk-insight" open hidden>
       <summary><span class="ins-title">收盤分析</span><span class="ins-date" id="stk-insight-date"></span></summary>

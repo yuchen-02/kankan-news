@@ -6,13 +6,19 @@
  * - stocks:close:YYYY-MM-DD  那一天的收盤資料（保留約 4 個月後自動過期）
  * - stocks:days              有收盤資料的日期清單（新到舊）
  * - stocks:status            今天收盤價的抓取狀態
- * 一天大約寫 4–5 次，遠低於免費方案每天 1,000 次。
+ * - stocks:intraday          最近一個交易日的加權指數每分鐘走勢（收盤排程時存）
+ * - stocks:indexDaily        加權指數每日收盤 [日期, 收盤][]（由舊到新，約 4 個月）
+ * 一天大約寫 6–7 次，遠低於免費方案每天 1,000 次。
  */
 import {
   buildLive,
   changeOf,
+  mergeDaily,
   misBatches,
   misUrl,
+  monthsBack,
+  parseIndexHist,
+  parseMisChart,
   parseIndexClose,
   parseMis,
   parseStockList,
@@ -21,6 +27,8 @@ import {
   type CloseQuote,
   type CloseSnapshot,
   type CloseStatus,
+  type DailyPoint,
+  type IntradayChart,
   type LiveSnapshot,
   type MisRow,
   type StockName,
@@ -35,11 +43,15 @@ const K = {
   days: "stocks:days",
   status: "stocks:status",
   close: (date: string) => `stocks:close:${date}`,
+  intraday: "stocks:intraday",
+  indexDaily: "stocks:indexDaily",
 };
 
 const UA = { "user-agent": "Mozilla/5.0 (compatible; news-digest)" };
 const STOCK_LIST_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL";
 const INDEX_CLOSE_URL = "https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX";
+const INTRADAY_URL = "https://mis.twse.com.tw/stock/api/getChartOhlcStatis.jsp?ex=tse&ch=t00.tw";
+const indexHistUrl = (yyyymm01: string) => `https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?date=${yyyymm01}&response=json`;
 
 // ── 證交所 ──────────────────────────────────────────
 
@@ -54,7 +66,7 @@ export async function fetchStockList(f: Fetch = fetch): Promise<StockName[]> {
 const MIS_RETRY_DELAY_MS = 500;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 抓一批 MIS；短暫的伺服器錯誤（5xx、連線中斷）隔一下再試一次。逾時已經等了 8 秒，不重試 */
+/** 抓一批 MIS；短暫的伺服器錯誤（5xx、連線中斷）隔一下再試一次。逾時已經等了 8 秒，不在這裡重試（收盤用 fetchMisGradually 另外重試） */
 async function fetchMisBatch(chs: string[], f: Fetch): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -69,24 +81,95 @@ async function fetchMisBatch(chs: string[], f: Fetch): Promise<Response> {
 
 /** 抓 MIS（全部批次同時送出）。任何一批重試後仍失敗就整個失敗，避免畫面上一半新一半舊 */
 export async function fetchMis(codes: string[], f: Fetch = fetch): Promise<MisRow[]> {
-  const batches = misBatches(codes);
-  const results = await Promise.all(
-    batches.map(async (chs) => {
-      const res = await fetchMisBatch(chs, f);
-      if (!res.ok) throw new Error(`MIS HTTP ${res.status}`);
-      const text = await res.text();
-      let json: unknown;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        throw new Error("MIS 回傳的不是 JSON（可能被暫時擋下）");
-      }
-      const rtcode = (json as { rtcode?: string }).rtcode;
-      if (rtcode && rtcode !== "0000") throw new Error(`MIS 回傳錯誤：${(json as { rtmessage?: string }).rtmessage ?? rtcode}`);
-      return parseMis(json);
-    }),
-  );
+  return fetchMisBatches(misBatches(codes), f);
+}
+
+/** 抓一批並解析；任何錯誤都丟出 */
+async function loadMisBatch(chs: string[], f: Fetch): Promise<MisRow[]> {
+  const res = await fetchMisBatch(chs, f);
+  if (!res.ok) throw new Error(`MIS HTTP ${res.status}`);
+  const text = await res.text();
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error("MIS 回傳的不是 JSON（可能被暫時擋下）");
+  }
+  const rtcode = (json as { rtcode?: string }).rtcode;
+  if (rtcode && rtcode !== "0000") throw new Error(`MIS 回傳錯誤：${(json as { rtmessage?: string }).rtmessage ?? rtcode}`);
+  return parseMis(json);
+}
+
+/** 抓已經分好批的 MIS 代號（盤中輪流抓用） */
+export async function fetchMisBatches(batches: string[][], f: Fetch = fetch): Promise<MisRow[]> {
+  const results = await Promise.all(batches.map((chs) => loadMisBatch(chs, f)));
   return results.flat();
+}
+
+export interface GradualOptions {
+  /** 一次同時送幾批 */
+  group?: number;
+  /** 每組之間隔多久（毫秒） */
+  gapMs?: number;
+  /** 有批次失敗時，每一輪補抓前要等多久；長度＝最多補抓幾輪 */
+  retryDelaysMs?: number[];
+  /** 測試用：換掉等待 */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * 收盤用：一次只送幾批、組與組之間隔一下，避免同時十幾個請求被 MIS 擋下或不回應。
+ * 失敗（含逾時）的批次等一下再補抓，最多補 retryDelaysMs.length 輪；補完還有失敗才整個失敗。
+ */
+export async function fetchMisGradually(batches: string[][], f: Fetch = fetch, opts: GradualOptions = {}): Promise<MisRow[]> {
+  const group = opts.group ?? 2;
+  const gapMs = opts.gapMs ?? 500;
+  const retryDelays = opts.retryDelaysMs ?? [3_000, 10_000];
+  const sleep = opts.sleep ?? wait;
+  const results: (MisRow[] | null)[] = batches.map(() => null);
+  let pending = batches.map((_, i) => i);
+  let lastError: unknown = null;
+
+  for (let round = 0; ; round++) {
+    const failed: number[] = [];
+    for (let k = 0; k < pending.length; k += group) {
+      if (k > 0) await sleep(gapMs);
+      const ids = pending.slice(k, k + group);
+      const settled = await Promise.allSettled(ids.map((i) => loadMisBatch(batches[i], f)));
+      settled.forEach((r, j) => {
+        if (r.status === "fulfilled") results[ids[j]] = r.value;
+        else {
+          failed.push(ids[j]);
+          lastError = r.reason;
+        }
+      });
+    }
+    if (failed.length === 0) break;
+    if (round >= retryDelays.length) {
+      const msg = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new Error(`${failed.length}/${batches.length} 批補抓後仍失敗：${msg}`);
+    }
+    console.log(`MIS：${failed.length}/${batches.length} 批失敗，${retryDelays[round] / 1000} 秒後補抓（${lastError instanceof Error ? lastError.message : lastError}）`);
+    await sleep(retryDelays[round]);
+    pending = failed;
+  }
+  return results.flat() as MisRow[];
+}
+
+/** 加權指數今天（或最近一個交易日）的每分鐘走勢 */
+export async function fetchIntraday(f: Fetch = fetch): Promise<IntradayChart> {
+  const res = await f(INTRADAY_URL, { headers: UA, signal: AbortSignal.timeout(8_000) });
+  if (!res.ok) throw new Error(`指數走勢 HTTP ${res.status}`);
+  const chart = parseMisChart(await res.json().catch(() => null));
+  if (!chart) throw new Error("指數走勢格式不對");
+  return chart;
+}
+
+/** 加權指數某個月的每日收盤 */
+async function fetchIndexMonth(yyyymm01: string, f: Fetch): Promise<DailyPoint[]> {
+  const res = await f(indexHistUrl(yyyymm01), { headers: UA, signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`指數歷史 HTTP ${res.status}`);
+  return parseIndexHist(await res.json().catch(() => null));
 }
 
 export async function fetchLive(codes: string[], prevPrices?: Map<string, number | null>, f: Fetch = fetch): Promise<LiveSnapshot> {
@@ -107,6 +190,47 @@ export async function getUniverse(kv: KVNamespace, f: Fetch = fetch): Promise<St
 export const getStatus = (kv: KVNamespace) => kv.get<CloseStatus>(K.status, "json");
 export const getDays = async (kv: KVNamespace) => (await kv.get<string[]>(K.days, "json")) ?? [];
 export const getClose = (kv: KVNamespace, date: string) => kv.get<CloseSnapshot>(K.close(date), "json");
+
+export const getIntraday = (kv: KVNamespace) => kv.get<IntradayChart>(K.intraday, "json");
+export const getDaily = async (kv: KVNamespace) => (await kv.get<DailyPoint[]>(K.indexDaily, "json")) ?? [];
+
+/** 日線少於這麼多天就向證交所補抓（第一次部署時） */
+const DAILY_MIN = 40;
+const BACKFILL_MONTHS = 5; // 含當月，約 4 個多月
+const BACKFILL_COOLDOWN_MS = 10 * 60_000;
+let backfillFailedAt = 0;
+
+/** 讀日線；資料太少就補抓最近幾個月（一個月一個請求，依序送）。補抓失敗時 10 分鐘內不再試 */
+export async function ensureDaily(kv: KVNamespace, now = Date.now(), f: Fetch = fetch): Promise<DailyPoint[]> {
+  const have = await getDaily(kv);
+  if (have.length >= DAILY_MIN || now - backfillFailedAt < BACKFILL_COOLDOWN_MS) return have;
+  try {
+    let all = have;
+    for (const m of monthsBack(taipeiTime(now).date, BACKFILL_MONTHS)) all = mergeDaily(all, await fetchIndexMonth(m, f), KEEP_DAYS);
+    if (all.length > have.length) await kv.put(K.indexDaily, JSON.stringify(all));
+    else backfillFailedAt = now; // 抓到的是空的，也先別再試
+    return all;
+  } catch (e) {
+    backfillFailedAt = now;
+    console.error("index daily backfill:", e instanceof Error ? e.message : e);
+    return have;
+  }
+}
+
+/** 收盤後存走勢圖資料：當天每分鐘走勢＋把收盤指數加進日線。失敗不影響收盤價 */
+async function storeIndexCharts(kv: KVNamespace, snap: CloseSnapshot, f: Fetch): Promise<void> {
+  try {
+    const chart = await fetchIntraday(f);
+    if (chart.date === snap.date && chart.points.length) await kv.put(K.intraday, JSON.stringify(chart));
+  } catch (e) {
+    console.error("intraday chart:", e instanceof Error ? e.message : e);
+  }
+  try {
+    if (snap.index?.value) await kv.put(K.indexDaily, JSON.stringify(mergeDaily(await getDaily(kv), [[snap.date, snap.index.value]], KEEP_DAYS)));
+  } catch (e) {
+    console.error("index daily:", e instanceof Error ? e.message : e);
+  }
+}
 
 export async function getLatestClose(kv: KVNamespace): Promise<CloseSnapshot | null> {
   const days = await getDays(kv);
@@ -138,7 +262,7 @@ export interface CloseRunResult {
  * - 不是今天（休市日）→ 標記今天休市；那一天的資料如果還沒存（例如第一次部署）就順便補存
  * retry：這是不是最後一次機會（14:40），失敗就標記 failed，頁面改顯示「收盤價暫時無法取得」
  */
-export async function runCloseJob(env: { NEWS: KVNamespace }, opts: { now?: number; retry?: boolean; fetch?: Fetch; force?: boolean } = {}): Promise<CloseRunResult> {
+export async function runCloseJob(env: { NEWS: KVNamespace }, opts: { now?: number; retry?: boolean; fetch?: Fetch; force?: boolean; gradual?: GradualOptions } = {}): Promise<CloseRunResult> {
   const f = opts.fetch ?? fetch;
   const now = opts.now ?? Date.now();
   const today = taipeiTime(now).date;
@@ -161,7 +285,7 @@ export async function runCloseJob(env: { NEWS: KVNamespace }, opts: { now?: numb
       list = await getUniverse(kv, f);
     }
     const names = new Map(list);
-    const rows = await fetchMis(list.map(([c]) => c), f);
+    const rows = await fetchMisGradually(misBatches(list.map(([c]) => c)), f, opts.gradual);
     const live = buildLive(rows);
     if (!live.date || live.quotes.length < list.length * 0.9) throw new Error(`MIS 資料不完整（${live.quotes.length}/${list.length} 檔）`);
 
@@ -186,6 +310,7 @@ export async function runCloseJob(env: { NEWS: KVNamespace }, opts: { now?: numb
 
     if (live.date === today) {
       await putClose(kv, snap);
+      await storeIndexCharts(kv, snap, f);
       await putStatus(kv, { date: today, state: "ok", at: new Date(now).toISOString() });
       return { stored: true, date: today, message: `已存 ${today} 收盤價（${quotes.length} 檔）` };
     }

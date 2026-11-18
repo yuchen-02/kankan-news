@@ -1,7 +1,7 @@
 import { repairLatest, runPipeline } from "./pipeline.ts";
 import { getInsight, runInsightJob } from "./stocks/insight.ts";
-import { insightCheckAt, phaseAt, taipeiTime } from "./stocks/market.ts";
-import { getClose, getDays, getLatestClose, getStatus, runCloseJob } from "./stocks/store.ts";
+import { insightCheckAt, isMarketHours, phaseAt, taipeiTime, wantsMisChart, type IntradayChart } from "./stocks/market.ts";
+import { ensureDaily, fetchIntraday, getClose, getDays, getIntraday, getLatestClose, getStatus, runCloseJob } from "./stocks/store.ts";
 import type { Digest, DigestIndexEntry, Env, RegionDigest } from "./types.ts";
 
 function json(data: unknown, init: ResponseInit = {}, cacheSeconds = 0): Response {
@@ -109,6 +109,28 @@ async function route(request: Request, env: Env): Promise<Response> {
     return snapshot ? json({ snapshot, insight }, {}, 3600) : json({ error: "找不到這一天的收盤資料" }, { status: 404 });
   }
 
+  // 加權指數當日走勢：盤中向證交所抓（經過 Durable Object，全站每分鐘最多一次），其他時候讀收盤時存的
+  if (url.pathname === "/api/stocks/intraday" && method === "GET") {
+    const now = Date.now();
+    const stored = await cached(env.NEWS, "stocks-intraday", 60_000, () => getIntraday(env.NEWS));
+    let chart = stored;
+    if (!stored || wantsMisChart(now, stored.date)) {
+      const stocks = env.STOCKS;
+      const live = await cached(env.NEWS, "stocks-intraday-live", 15_000, () =>
+        // RPC 的型別會把 tuple 攤平成 number[][]，轉回原本的型別
+        stocks ? (stocks.get(stocks.idFromName("tw")).intraday() as Promise<IntradayChart | null>) : fetchIntraday().catch(() => null),
+      );
+      if (live && (!stored || live.date >= stored.date)) chart = live;
+    }
+    return json({ chart }, {}, isMarketHours(now) ? 30 : 300);
+  }
+
+  // 加權指數日線（約 4 個月）
+  if (url.pathname === "/api/stocks/daily" && method === "GET") {
+    const points = await cached(env.NEWS, "stocks-daily", 60_000, () => ensureDaily(env.NEWS));
+    return json({ points }, {}, 600);
+  }
+
   // 盤中推送：WebSocket 連到 Durable Object；只接受從本站頁面連進來的（瀏覽器一定會帶 Origin）
   if (url.pathname === "/api/stocks/live") {
     if (!env.STOCKS) return json({ error: "Not found" }, { status: 404 });
@@ -148,10 +170,12 @@ async function route(request: Request, env: Env): Promise<Response> {
         return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
       }
     }
-    // POST /api/refresh?insight=1：立刻重新產生最新一天的收盤分析
+    // POST /api/refresh?insight=1：立刻重新產生最新一天的收盤分析；加 &date=YYYY-MM-DD 重做指定的那一天
     if (url.searchParams.get("insight") === "1") {
+      const date = url.searchParams.get("date");
+      if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "date 格式不正確" }, { status: 400 });
       try {
-        return json({ ok: true, ...(await runInsightJob(env, { force: true })) });
+        return json({ ok: true, ...(await runInsightJob(env, date ? { date } : { force: true })) });
       } catch (e) {
         return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
       }

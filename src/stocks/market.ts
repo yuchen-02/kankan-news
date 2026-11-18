@@ -183,6 +183,38 @@ export function misUrl(chs: string[]): string {
 
 export const chOf = (code: string) => `tse_${code}.tw`;
 
+/** 每個頁面最多回報幾檔「正在看的股票」 */
+export const LIVE_MAX_VIEW = 60;
+
+/**
+ * 盤中每一輪要抓什麼（證交所擋得很兇，每 5 秒只送 2 個請求）：
+ * - 第 1 批：加權指數＋所有頁面正在看的股票（最多 MIS_BATCH - 1 檔）
+ * - 第 2 批：全部股票輪流，每輪往後一批；全部輪完一圈約 universe.length / size 輪
+ */
+export function livePlan(universe: string[], visible: string[], cursor: number, size = MIS_BATCH): { batches: string[][]; nextCursor: number } {
+  const start = universe.length ? cursor % universe.length : 0;
+  const rotation = universe.slice(start, start + size);
+  const seen = [INDEX_CH, ...[...new Set(visible)].slice(0, size - 1).map(chOf)];
+  return {
+    batches: rotation.length ? [seen, rotation.map(chOf)] : [seen],
+    nextCursor: start + size >= universe.length ? 0 : start + size,
+  };
+}
+
+/** 頁面回報「正在看的股票」的訊息 → 代號清單（只留清單裡有的股票，最多 LIVE_MAX_VIEW 檔）；格式不對回傳 null */
+export function parseViewMessage(text: unknown, known: Set<string>): string[] | null {
+  if (typeof text !== "string" || text.length > 2000) return null;
+  let m: unknown;
+  try {
+    m = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const codes = (m as { type?: unknown; codes?: unknown })?.type === "view" ? (m as { codes: unknown }).codes : null;
+  if (!Array.isArray(codes)) return null;
+  return [...new Set(codes.filter((c): c is string => typeof c === "string" && known.has(c)))].slice(0, LIVE_MAX_VIEW);
+}
+
 /** 把代號清單切成每批最多 size 檔；加權指數放在第一批 */
 export function misBatches(codes: string[], size = MIS_BATCH): string[][] {
   const chs = [INDEX_CH, ...codes.map(chOf)];
@@ -309,4 +341,84 @@ export function diffQuotes(prev: Map<string, LiveQuote>, next: LiveQuote[]): Liv
     if (!p || p[1] !== q[1] || p[2] !== q[2] || p[3] !== q[3]) out.push(q);
   }
   return out;
+}
+
+// ── 加權指數走勢圖 ──────────────────────────────────
+
+/** 當日走勢的一個點：[台北當天第幾分鐘, 指數] */
+export type ChartPoint = [minute: number, value: number];
+
+export interface IntradayChart {
+  /** YYYY-MM-DD */
+  date: string;
+  /** 昨收（虛線基準） */
+  prev: number | null;
+  points: ChartPoint[];
+}
+
+/** 日線的一個點：[YYYY-MM-DD, 收盤指數] */
+export type DailyPoint = [date: string, close: number];
+
+/** MIS 每分鐘走勢（getChartOhlcStatis.jsp）→ 當日走勢；格式不對回傳 null */
+export function parseMisChart(json: unknown): IntradayChart | null {
+  const j = json as { infoArray?: Record<string, unknown>[]; ohlcArray?: Record<string, unknown>[] } | null;
+  const info = Array.isArray(j?.infoArray) ? j.infoArray[0] : undefined;
+  const d = String(info?.d ?? "");
+  if (!/^\d{8}$/.test(d)) return null;
+  const date = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
+  const byMinute = new Map<number, number>();
+  for (const o of Array.isArray(j?.ohlcArray) ? j.ohlcArray : []) {
+    const value = num(o?.c);
+    const t = Number(o?.t);
+    if (value === null || !Number.isFinite(t)) continue;
+    const tt = taipeiTime(t);
+    if (tt.date === date) byMinute.set(tt.minutes, value);
+  }
+  const points = [...byMinute].sort((a, b) => a[0] - b[0]);
+  return { date, prev: num(info?.y), points };
+}
+
+/** 證交所「加權指數歷史資料」（一個月的每日開高低收）→ 每日收盤 */
+export function parseIndexHist(json: unknown): DailyPoint[] {
+  const j = json as { stat?: unknown; data?: unknown } | null;
+  if (j?.stat !== "OK" || !Array.isArray(j.data)) return [];
+  const out: DailyPoint[] = [];
+  for (const r of j.data) {
+    if (!Array.isArray(r)) continue;
+    const date = rocDate(String(r[0] ?? "").replace(/\//g, ""));
+    const close = num(r[4]);
+    if (date && close !== null) out.push([date, close]);
+  }
+  return out;
+}
+
+/** 合併日線（同一天以新的為準），由舊到新，只留最後 keep 天 */
+export function mergeDaily(prev: DailyPoint[], add: DailyPoint[], keep: number): DailyPoint[] {
+  const m = new Map(prev);
+  for (const [d, c] of add) m.set(d, c);
+  return [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).slice(-keep);
+}
+
+/** date 那個月往前 n 個月（含當月）的 YYYYMM01，由舊到新；查證交所月資料用 */
+export function monthsBack(date: string, n: number): string[] {
+  let y = Number(date.slice(0, 4));
+  let m = Number(date.slice(5, 7));
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    out.unshift(`${y}${String(m).padStart(2, "0")}01`);
+    if (--m === 0) {
+      m = 12;
+      y--;
+    }
+  }
+  return out;
+}
+
+/**
+ * 當日走勢要不要向 MIS 抓：平日 9:00 以後、而且 KV 裡存的還不是今天（收盤排程 14:30 才會存）。
+ * 其他時候（開盤前、週末）用 KV 裡最近一天的。
+ */
+export function wantsMisChart(nowMs: number, storedDate: string | null): boolean {
+  const t = taipeiTime(nowMs);
+  return isWeekday(t) && t.minutes >= OPEN_MIN && storedDate !== t.date;
 }

@@ -28,7 +28,7 @@ import { createStocks } from "./stocks.js";
 import { initFeedback } from "./feedback.js";
 
 /** 意見表單：送到和 anime 專案共用的回饋服務；project 會出現在信的標題與資料庫裡 */
-const FEEDBACK_URL = "https://feedback.looksomenews.workers.dev";
+const FEEDBACK_URL = "https://feedback.yccase.workers.dev";
 const FEEDBACK_PROJECT = "news-digest";
 
 const KEY = { visit: "jiegui:lastVisit", theme: "jiegui:theme", tab: "jiegui:tab", geo: "jiegui:geo" };

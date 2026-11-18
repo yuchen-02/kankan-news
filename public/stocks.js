@@ -3,6 +3,7 @@ import {
   fmtDay,
   fmtVolume,
   insightSummaryParts,
+  kurumiImage,
   fmtPrice,
   fmtChange,
   fmtPct,
@@ -19,10 +20,15 @@ import {
   wantsLive,
   nextCheckDelay,
 } from "./stocks-lib.js";
+import { createIndexChart } from "./stocks-chart.js";
 
 const COLORS_KEY = "jiegui:stockColors";
+const VIEW_MAX = 60; // 最多回報幾檔正在看的股票（伺服器也會再擋一次）
 const INSIGHT_KEY = "jiegui:stockInsight"; // 收盤分析收合（"0"）或展開
 const INSIGHT_NOTE = "評論由 AI 依當日行情與新聞標題整理，內容可能有誤，非投資建議；提到的新聞不代表與漲跌有因果關係。";
+// 用久留美口吻寫的評論（有 persona 欄位的分析）
+const KURUMI_LEAD = "今天這盤，久留美覺得：";
+const KURUMI_NOTE = "以上為久留美內心話，娛樂性質，非投資建議哦";
 const ROW_H = 44; // 每一列的高度（px），要和 style.css 的 --stk-row 一樣
 const MENU_DAYS_OPEN = 10; // 日曆選單預設列出最近幾個交易日，更早的收在「更早」裡
 
@@ -134,6 +140,25 @@ export function createStocks(ctx) {
       empty.hidden = false;
     } else empty.hidden = true;
     $("#stk-table").setAttribute("aria-rowcount", String(n + 1));
+    reportView(s.view.slice(start, end).map((r) => r.code));
+  }
+
+  // ── 告訴伺服器正在看哪些股票（盤中只有這些每 5 秒更新，其他輪流更新）──
+  let viewTimer = 0;
+  let viewSent = "";
+  let viewCodes = [];
+  function reportView(codes) {
+    viewCodes = codes.slice(0, VIEW_MAX);
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(sendView, 400); // 捲動停下來才送，不要每一格都送
+  }
+  function sendView() {
+    const ws = s.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const text = JSON.stringify({ type: "view", codes: viewCodes });
+    if (text === viewSent) return;
+    viewSent = text;
+    ws.send(text);
   }
 
   /** 篩選／排序有變（或資料整批換掉）時重算清單 */
@@ -147,6 +172,9 @@ export function createStocks(ctx) {
     if (s.sort === "code") paint();
     else rebuild();
   }
+
+  // ── 加權指數走勢圖 ──
+  const chart = createIndexChart({ $, el, store, getJson: (url) => getJson(url) });
 
   // ── 收盤分析 ──
   const insightBox = $("#stk-insight");
@@ -174,12 +202,24 @@ export function createStocks(ctx) {
       $("#stk-insight-date").textContent = fmtDay(ins.date);
       const body = $("#stk-insight-body");
       body.textContent = "";
+      const kurumi = ins.persona === "kurumi" && !!ins.text;
+      // 指數段落＋評論包在一起；久留美版依當天漲跌在後面放一張圖（50% 透明）
+      const hero = el("div", { class: "ins-hero" });
+      const img = kurumi ? kurumiImage(ins.date, ins.index && ins.index.pct) : null;
+      if (img) {
+        hero.classList.add("has-img");
+        hero.appendChild(el("img", { class: "ins-bg", src: img, alt: "", loading: "lazy", decoding: "async" }));
+      }
+      const copy = el("div", { class: "ins-copy" });
+      hero.appendChild(copy);
       const summary = el("p", { class: "ins-summary" });
       for (const p of insightSummaryParts(ins)) {
         summary.appendChild(p.trend ? el("span", { class: "ins-num ins-" + p.trend, text: p.text }) : document.createTextNode(p.text));
       }
-      body.appendChild(summary);
-      if (ins.text) body.appendChild(el("p", { class: "ins-text", text: ins.text }));
+      copy.appendChild(summary);
+      if (kurumi) copy.appendChild(el("p", { class: "ins-lead", text: KURUMI_LEAD }));
+      if (ins.text) copy.appendChild(el("p", { class: "ins-text" + (kurumi ? " ins-kurumi" : ""), text: ins.text }));
+      body.appendChild(hero);
       const asPct = (q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtPct(q[3]) });
       const asVolume = (q) => ({ code: q[0], name: q[1], pct: q[3], value: fmtVolume(q[2]) });
       const ranks = el("div", { class: "ins-ranks" });
@@ -192,7 +232,7 @@ export function createStocks(ctx) {
         if (rows.length) ranks.appendChild(rankBlock(title, rows));
       }
       body.appendChild(ranks);
-      body.appendChild(el("p", { class: "ins-note", text: INSIGHT_NOTE }));
+      body.appendChild(el("p", { class: "ins-note", text: kurumi ? KURUMI_NOTE : INSIGHT_NOTE }));
     }
     schedulePaint();
   }
@@ -216,6 +256,8 @@ export function createStocks(ctx) {
     box.appendChild(el("span", { class: "ix-value", text: idx ? fmtPrice(idx.value) : "—" }));
     box.appendChild(el("span", { class: "ix-chg", text: idx ? fmtChange(idx.change) : "—" }));
     box.appendChild(el("span", { class: "ix-pct", text: idx ? fmtPct(idx.pct) : "" }));
+
+    chart.sync({ active: s.active, liveOn: !s.viewing && s.phase === "live", viewing: s.viewing ? s.viewing.date : null, latestDate: s.latest ? s.latest.date : null });
   }
 
   // ── 盤中推送 ──
@@ -226,6 +268,10 @@ export function createStocks(ctx) {
     if (s.ws || !shouldLive()) return;
     const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/stocks/live");
     s.ws = ws;
+    ws.onopen = () => {
+      viewSent = ""; // 新的連線，伺服器還不知道我們在看什麼
+      sendView();
+    };
     ws.onmessage = (e) => {
       let m;
       try { m = JSON.parse(e.data); } catch (err) { return; }
@@ -244,6 +290,7 @@ export function createStocks(ctx) {
       }
       s.live = { status: m.status, date: m.date, time: m.time, stale: false };
       if (m.index) s.index = m.index;
+      chart.setLive(m.date, m.time, m.index);
       applyLive(s.rows, m.quotes);
       if (m.type === "full") rebuild();
       else refreshPrices();
@@ -330,6 +377,7 @@ export function createStocks(ctx) {
     } else {
       disconnect();
       clearTimeout(s.checkTimer);
+      chart.stop();
     }
   });
 
@@ -433,6 +481,7 @@ export function createStocks(ctx) {
     hide() {
       s.active = false;
       disconnect();
+      chart.stop();
       closeMenu();
       clearTimeout(s.checkTimer);
     },

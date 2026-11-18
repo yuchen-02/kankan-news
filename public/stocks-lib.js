@@ -179,3 +179,81 @@ export function nextCheckDelay(nextCheckAt, now, failures) {
 export function wantsLive(phase) {
   return phase === "live" || phase === "after" || phase === "fetching" || phase === "failed";
 }
+
+// ── 加權指數走勢圖 ──
+
+/** 當天第幾分鐘 → "9:05"（小數無條件捨去） */
+export function fmtMinute(m) {
+  const t = Math.floor(m);
+  return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+}
+
+/** y 軸刻度：min–max 之間取幾個整齊的數字（間隔是 1、2、2.5、5 乘上 10 的次方） */
+export function niceTicks(min, max, count = 3) {
+  if (!(max > min)) return [min];
+  const raw = (max - min) / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((v) => v >= raw);
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+  return out;
+}
+
+/**
+ * 比例尺：y 範圍包含所有值和基準，上下各留 8%；box 是畫圖區的像素邊界 { left, right, top, bottom }。
+ * 回傳 { lo, hi, x(v), y(v) }
+ */
+export function chartScale(values, base, x0, x1, box) {
+  const all = base === null || base === undefined ? values : [...values, base];
+  let lo = Math.min(...all);
+  let hi = Math.max(...all);
+  if (!Number.isFinite(lo)) [lo, hi] = [0, 1];
+  if (lo === hi) [lo, hi] = [lo - 1, hi + 1];
+  const pad = (hi - lo) * 0.08;
+  lo -= pad;
+  hi += pad;
+  return {
+    lo,
+    hi,
+    x: (v) => box.left + ((v - x0) / (x1 - x0 || 1)) * (box.right - box.left),
+    y: (v) => box.bottom - ((v - lo) / (hi - lo)) * (box.bottom - box.top),
+  };
+}
+
+/** 由小到大的 xs 裡，離 x 最近的索引 */
+export function nearestIndex(xs, x) {
+  let lo = 0;
+  let hi = xs.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] < x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo > 0 && x - xs[lo - 1] < xs[lo] - x ? lo - 1 : lo;
+}
+
+/** 當日走勢最後一點跟著即時指數：即時資料比最後一個點晚才接在後面 */
+export function withLiveTail(points, tail) {
+  const last = points[points.length - 1];
+  if (!tail || (last && tail[0] <= last[0])) return points;
+  return [...points, tail];
+}
+
+// ── 收盤分析背景圖（久留美版）──
+
+/** 依加權指數漲跌幅分五段：大跌、跌、平盤、漲、大漲；數字是 public/kurumi/ 裡的圖片編號 */
+const KURUMI_MOODS = [
+  { upTo: (p) => p <= -1.5, imgs: [1, 4] },
+  { upTo: (p) => p < -0.3, imgs: [2, 3] },
+  { upTo: (p) => p <= 0.3, imgs: [8] },
+  { upTo: (p) => p < 1.5, imgs: [7] },
+  { upTo: () => true, imgs: [5, 6] },
+];
+
+/** 那一天的背景圖網址；同一段有兩張時依日期固定挑一張（同一天每次看都一樣）。沒有漲跌幅就不放圖 */
+export function kurumiImage(date, pct) {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
+  const { imgs } = KURUMI_MOODS.find((m) => m.upTo(pct));
+  const day = Number(String(date || "").replace(/-/g, "")) || 0;
+  return "/kurumi/" + imgs[day % imgs.length] + ".webp";
+}

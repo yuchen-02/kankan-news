@@ -10,14 +10,15 @@ export interface ChosenSummarizer {
 
 export interface TextModel {
   model: string;
-  text(system: string, user: string, maxTokens: number): Promise<string>;
+  /** temperature 越高每次寫的越不一樣（摘要用 0.2 求穩，收盤評論用高一點） */
+  text(system: string, user: string, maxTokens: number, temperature?: number): Promise<string>;
 }
 
 /** 和摘要用同一個模型設定，但回傳純文字（給收盤分析用） */
 export function pickTextModel(env: Env): TextModel {
   return (env.SUMMARIZER || "workers-ai").toLowerCase() === "claude"
-    ? { model: env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL, text: (s, u, n) => claudeText(env, s, u, n) }
-    : { model: env.AI_MODEL || DEFAULT_AI_MODEL, text: (s, u, n) => workersAiText(env, s, u, n) };
+    ? { model: env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL, text: (s, u, n, temp) => claudeText(env, s, u, n, temp) }
+    : { model: env.AI_MODEL || DEFAULT_AI_MODEL, text: (s, u, n, temp) => workersAiText(env, s, u, n, temp) };
 }
 
 /**

@@ -8,7 +8,8 @@ import type { Env } from "./types.ts";
 
 /** 台股排程（UTC 06:30、06:40 抓收盤價，06:50 產生收盤分析 = 台北 14:30、14:40、14:50，週一到週五）；要和 wrangler.jsonc 裡的寫法一模一樣。
  *  （Worker 的主檔只能 export 處理函式與 Durable Object 類別，所以這裡不 export） */
-const STOCK_CRON = "30,40,50 6 * * 1-5";
+// 星期用英文縮寫：Cloudflare 的數字是 1 = 星期日（跟 Linux cron 不同），寫 1-5 會變成星期日到星期四
+const STOCK_CRON = "30,40,50 6 * * mon-fri";
 
 export default {
   fetch: (request: Request, env: Env): Promise<Response> => handleRequest(request, env),

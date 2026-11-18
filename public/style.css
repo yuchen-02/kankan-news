@@ -698,6 +698,42 @@ html.theme-fading *::after {
 .ix-chg, .ix-pct { font: 600 1.15rem/1 var(--num); font-variant-numeric: tabular-nums; }
 .stk-colors span { font: 700 1.25rem/1 var(--sans); }
 
+/* 加權指數走勢圖 */
+.stk-chart { margin-top: 14px; padding: 10px 16px 8px 20px; background: var(--card); box-shadow: inset 4px 0 0 var(--signal); }
+.chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.chart-tabs { display: flex; gap: 6px; }
+.chart-tabs button {
+  min-height: 36px; padding: 4px 12px; cursor: pointer; font: 600 0.85rem/1 var(--sans); letter-spacing: 0.04em;
+  color: var(--muted); background: none; border: 1px solid var(--rule); border-radius: 4px;
+}
+.chart-tabs button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+.chart-tabs button:disabled { opacity: 0.4; cursor: default; }
+.chart-read { display: flex; align-items: baseline; gap: 10px; min-height: 1.4em; font-variant-numeric: tabular-nums; }
+.cr-when { color: var(--muted); font-size: 0.85rem; }
+.cr-val { font: 700 1rem/1.2 var(--num); }
+.cr-chg { font: 600 0.9rem/1.2 var(--num); }
+.chart-read.t-up .cr-val, .chart-read.t-up .cr-chg { color: var(--up); }
+.chart-read.t-down .cr-val, .chart-read.t-down .cr-chg { color: var(--down); }
+.chart-box { position: relative; height: 180px; margin-top: 6px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+@media (min-width: 720px) { .chart-box { height: 220px; } }
+.chart-svg { display: block; overflow: visible; }
+.chart-empty { margin: 0; padding-top: 70px; text-align: center; color: var(--muted); font-size: 0.9rem; }
+.chart-grid { stroke: var(--rule); stroke-width: 1; }
+.chart-tick { fill: var(--muted); font: 500 11px var(--num); font-variant-numeric: tabular-nums; }
+.chart-line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.chart-area { stroke: none; opacity: 0.12; }
+.ln-up .chart-line { stroke: var(--up); }
+.ln-up .chart-area { fill: var(--up); }
+.ln-down .chart-line { stroke: var(--down); }
+.ln-down .chart-area { fill: var(--down); }
+.chart-base { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.chart-base-label { fill: var(--muted); font: 500 11px var(--num); paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+.chart-guide { stroke: var(--muted); stroke-width: 1; }
+.chart-dot { fill: var(--ink); stroke: var(--card); stroke-width: 1.5; }
+.chart-dot.t-up { fill: var(--up); }
+.chart-dot.t-down { fill: var(--down); }
+.chart-mark { fill: none; stroke: var(--signal); stroke-width: 2; }
+
 /* 收盤分析：指數下方可收合的卡片 */
 .stk-insight { margin-top: 14px; background: var(--card); box-shadow: inset 4px 0 0 var(--signal); }
 .stk-insight summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 16px 8px 20px; cursor: pointer; }
@@ -712,6 +748,17 @@ html.theme-fading *::after {
 .ins-up { color: var(--up); }
 .ins-down { color: var(--down); }
 .ins-text { margin: 0; font-size: 0.97rem; }
+/* 久留美版：圖鋪在指數段落＋評論後面（50% 透明），文字下面墊一層半透明的卡片底色 */
+.ins-hero { position: relative; }
+/* 圖固定 16:9 貼在上方、底部漸淡；文字從圖的 45% 高度開始（padding 的 % 是以寬度算），桌機手機都看得到臉 */
+.ins-hero.has-img { overflow: hidden; margin: 0 -16px 0 -20px; padding: 45% 16px 14px 20px; }
+.ins-bg {
+  position: absolute; top: 0; left: 0; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; opacity: 0.5;
+  pointer-events: none; user-select: none; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent);
+}
+.ins-hero.has-img .ins-copy { position: relative; padding: 10px 12px; border-radius: 4px; background: color-mix(in srgb, var(--card) 60%, transparent); }
+.ins-lead { margin: 10px 0 2px; color: var(--muted); font: 700 0.85rem/1.4 var(--sans); letter-spacing: 0.06em; }
+.ins-kurumi { padding-left: 10px; border-left: 2px solid var(--signal); }
 .ins-ranks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 .ins-block { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 4px; }
 .ins-block h4 { margin: 0 0 6px; color: var(--muted); font: 700 0.82rem/1.4 var(--sans); letter-spacing: 0.06em; }
